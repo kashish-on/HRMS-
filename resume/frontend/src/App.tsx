@@ -67,7 +67,7 @@ function useCurrentUser(): UserInfo {
       const name = profile?.full_name?.trim() ||
         email.split('@')[0]
           .replace(/[._-]+/g, ' ')
-          .replace(/\b\w/g, (c) => c.toUpperCase())
+          .replace(/\b\w/g, (c: string) => c.toUpperCase())
           .trim() || 'HR';
 
       const role = profileRole === 'hr' ? 'HR Manager' : profileRole === 'candidate' ? 'Candidate' : 'HR Manager';
