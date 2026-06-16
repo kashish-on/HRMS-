@@ -256,6 +256,10 @@ export default function CareerPortal() {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
 
+  useEffect(() => {
+    document.title = "ObserveNow Careers";
+  }, []);
+
   // ── Fetch all jobs ──────────────────────────────────────────────────────────
   useEffect(() => {
     (async () => {

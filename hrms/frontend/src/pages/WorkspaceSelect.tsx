@@ -130,12 +130,8 @@ const WorkspaceSelect = () => {
               Review parsed resumes, shortlist candidates, move applicants through interview stages, and manage ATS actions inside the recruitment module.
             </p>
 
-            <div className="mt-6 overflow-hidden rounded-[22px] border border-[#efe6fb] bg-[linear-gradient(135deg,#faf7ff_0%,#f4ecff_100%)] p-4">
-              <img
-                src={jobApplicantsImage}
-                alt="Job applicants module preview"
-                className="h-28 w-full rounded-2xl object-contain bg-white px-4 py-4"
-              />
+            <div className="mt-6 overflow-hidden rounded-[22px] border border-[#efe6fb] bg-[linear-gradient(135deg,#faf7ff_0%,#f4ecff_100%)] p-6 flex h-28 items-center justify-center">
+              <BriefcaseBusiness className="h-16 w-16 text-[#6f2dbd]" />
             </div>
 
             <div className="mt-6 flex items-center justify-between">
