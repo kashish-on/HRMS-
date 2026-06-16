@@ -76,7 +76,14 @@ export async function runParseFlow(input: ParseRunInput): Promise<ParseRunRespon
   formData.append('title', input.role);
   formData.append('job_profile', input.role);
   formData.append('location', input.location);
+
+  // Send each skill individually so the backend receives required_skills as an array
+  // (also keep 'skills' for backward compatibility)
   formData.append('skills', input.skills);
+  const skillList = input.skills.split(',').map((s) => s.trim()).filter(Boolean);
+  for (const skill of skillList) {
+    formData.append('required_skills', skill);
+  }
 
   const expValue = input.exp.replace(/[^\d]/g, '');
   if (expValue) {
@@ -195,8 +202,6 @@ export async function deleteCandidate(candidateId: string) {
   );
 }
 
-// ── Public Careers Portal API ─────────────────────────────────────────────────
-
 export interface PublicJob {
   id: string;
   title: string;
@@ -236,8 +241,6 @@ export async function submitPortalApplication(
     body: form,
   });
 }
-
-// ── Job status toggle ─────────────────────────────────────────────────────────
 
 export async function toggleJobStatus(jobId: string, isOpen: boolean): Promise<void> {
   await request<{ status: string }>(`/jobs/${jobId}/status`, {
@@ -357,11 +360,11 @@ export async function toggleJobStatus(jobId: string, isOpen: boolean): Promise<v
 //   });
 // }
 
-// export async function createCandidateNote(candidateId: string, noteText: string) {
+// export async function createCandidateNote(candidateId: string, noteText: string, createdBy?: string) {
 //   return request<{ note: Note }>(`/candidates/${candidateId}/notes`, {
 //     method: 'POST',
 //     body: JSON.stringify({
-//       created_by: 'Anchal',
+//       created_by: createdBy?.trim() || 'HR Team',
 //       note_text: noteText,
 //     }),
 //   });
@@ -391,8 +394,26 @@ export async function toggleJobStatus(jobId: string, isOpen: boolean): Promise<v
 // export async function createOffer(
 //   candidateId: string,
 //   jobId: string,
-//   form: OfferForm
+//   form: OfferForm,
+//   offerFile?: File | null
 // ) {
+//   if (offerFile) {
+//     const formData = new FormData();
+//     formData.append('job_id', jobId);
+//     formData.append('designation', form.designation);
+//     if (form.ctc?.trim()) formData.append('ctc', form.ctc.trim());
+//     if (form.joiningDate?.trim()) formData.append('joining_date', form.joiningDate.trim());
+//     if (form.reportingTo?.trim()) formData.append('reporting_to', form.reportingTo.trim());
+//     if (form.additionalNote?.trim()) formData.append('additional_note', form.additionalNote.trim());
+//     formData.append('status', 'generated');
+//     formData.append('offerFile', offerFile);
+
+//     return request<{ offer: unknown }>(`/candidates/${candidateId}/offers`, {
+//       method: 'POST',
+//       body: formData,
+//     });
+//   }
+
 //   return request<{ offer: unknown }>(`/candidates/${candidateId}/offers`, {
 //     method: 'POST',
 //     body: JSON.stringify({
@@ -468,3 +489,12 @@ export async function toggleJobStatus(jobId: string, isOpen: boolean): Promise<v
 //   });
 // }
 
+// // ── Job status toggle ─────────────────────────────────────────────────────────
+
+// export async function toggleJobStatus(jobId: string, isOpen: boolean): Promise<void> {
+//   await request<{ status: string }>(`/jobs/${jobId}/status`, {
+//     method: 'PATCH',
+//     headers: { 'Content-Type': 'application/json' },
+//     body: JSON.stringify({ is_open: isOpen }),
+//   });
+// }

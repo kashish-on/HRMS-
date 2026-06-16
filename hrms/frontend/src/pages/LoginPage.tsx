@@ -80,7 +80,7 @@ const LoginPage = () => {
 
       {/* Right - Login */}
       <div className="flex w-full lg:w-1/2 items-center justify-center px-6 py-12">
-        <div className="w-full max-w-md space-y-8">
+        <div className="w-full max-w-xl space-y-8">
 
           {/* Logo */}
           <div className="space-y-2 text-left pt-4">

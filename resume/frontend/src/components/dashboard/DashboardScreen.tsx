@@ -392,30 +392,35 @@ export default function DashboardScreen() {
             <div className="mb-5 flex flex-wrap gap-3">
               <input
                 className="h-11 w-[180px] rounded-md border border-[#e5deef] bg-[#fbfafe] px-3.5 text-[13px] text-[#4a3c60] outline-none placeholder:text-[#b4a8c3] focus:border-[#b48de2]"
-                placeholder="Select Job Role"
+                placeholder="Enter Job Role"
                 value={role}
                 onChange={(event) => setRole(event.target.value)}
               />
-              <select
-                className="h-11 w-[170px] rounded-md border border-[#e5deef] bg-[#fbfafe] px-3.5 text-[13px] text-[#6f627f] outline-none focus:border-[#b48de2]"
-                value={exp}
-                onChange={(event) => setExp(event.target.value)}
-              >
+              <div className="relative">
+                <select
+                  className="h-11 w-[170px] rounded-md border border-[#e5deef] bg-[#fbfafe] px-3.5 pr-8 appearance-none text-[13px] text-[#6f627f] outline-none focus:border-[#b48de2]"
+                  value={exp}
+                  onChange={(event) => setExp(event.target.value)}
+                >
                 <option value="">Select Experience</option>
                 <option>1+ years</option>
                 <option>3+ years</option>
                 <option>5+ years</option>
                 <option>7+ years</option>
-              </select>
+                </select>
+                <svg className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#6f627f]" width="10" height="6" viewBox="0 0 12 8" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M1 1L6 6L11 1" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </div>
               <input
                 className="h-11 w-[155px] rounded-md border border-[#e5deef] bg-[#fbfafe] px-3.5 text-[13px] text-[#4a3c60] outline-none placeholder:text-[#b4a8c3] focus:border-[#b48de2]"
-                placeholder="Select Location"
+                placeholder="Enter Location"
                 value={location}
                 onChange={(event) => setLocation(event.target.value)}
               />
               <input
                 className="h-11 w-[150px] rounded-md border border-[#e5deef] bg-[#fbfafe] px-3.5 text-[13px] text-[#4a3c60] outline-none placeholder:text-[#b4a8c3] focus:border-[#b48de2]"
-                placeholder="Select Skills"
+                placeholder="Enter Skills"
                 value={skills}
                 onChange={(event) => setSkills(event.target.value)}
               />
@@ -469,7 +474,7 @@ export default function DashboardScreen() {
               <button
                 onClick={() => void handleStartParsing()}
                 disabled={isParsing}
-                className={`rounded-[6px] px-6 py-2.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-white ${
+                className={`rounded-[6px] px-6 py-2.5 text-[11px] font-semibold text-white ${
                   isParsing ? 'bg-[#bba5d8]' : 'bg-[#5f179f] hover:bg-[#511089]'
                 }`}
               >
@@ -503,16 +508,21 @@ export default function DashboardScreen() {
 
                 {/* Job selector + Create Job */}
                 <div className="flex items-center gap-2">
-                  <select
-                    value={selectedJobId}
-                    onChange={(e) => setSelectedJobId(e.target.value)}
-                    className="h-10 flex-1 max-w-sm rounded-lg border border-[#e5deef] bg-[#fbfafe] px-3.5 text-[13px] text-[#4a3c60] outline-none focus:border-[#b48de2]"
-                  >
+                  <div className="relative flex-1 max-w-sm">
+                    <select
+                      value={selectedJobId}
+                      onChange={(e) => setSelectedJobId(e.target.value)}
+                      className="h-10 w-full rounded-lg border border-[#e5deef] bg-[#fbfafe] px-3.5 pr-8 appearance-none text-[13px] text-[#4a3c60] outline-none focus:border-[#b48de2]"
+                    >
                     <option value=""> Select a job to view applications </option>
                     {portalJobs.map((j) => (
                       <option key={j.id} value={j.id}>{j.title} ({j.job_profile})</option>
-                    ))}
-                  </select>
+                    ))}``
+                    </select>
+                    <svg className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#6f627f]" width="10" height="6" viewBox="0 0 12 8" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M1 1L6 6L11 1" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </div>
                   <button
                     type="button"
                     onClick={() => { setShowCreateJob(true); setCreateJobError(null); }}
