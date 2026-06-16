@@ -1,6 +1,5 @@
 import { Button } from "@/components/ui/button";
 import observeNowPeopleLogo from "@/assets/observenow_people.png";
-import jobApplicantsImage from "@/assets/job.png";
 import { ArrowRight, BriefcaseBusiness, UserPlus } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { getResumeAppUrl } from "@/lib/backend";

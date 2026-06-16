@@ -6,7 +6,7 @@ import { Eye, EyeOff } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useNavigate } from "react-router-dom";
 import observeNowPeopleLogo from "@/assets/observenow_people.png";
-import splineImage from "@/assets/spline.jpeg";
+import splineImage from "@/assets/careers-login-page.png";
 
 const LoginPage = () => {
   const navigate = useNavigate();
@@ -17,18 +17,7 @@ const LoginPage = () => {
   const [remember, setRemember] = useState(true);
   const [loading, setLoading] = useState(false);
 
-  /* 🔥 Auto redirect if already logged in */
-  // useEffect(() => {
-  //   const checkUser = async () => {
-  //     const { data } = await supabase.auth.getUser();
-  //     if (data.user) {
-  //       navigate("/dashboard");
-  //     }
-  //   };
-  //   checkUser();
-  // }, []);
 
-  /* 🔥 Login handler */
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
