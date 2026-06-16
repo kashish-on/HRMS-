@@ -7,8 +7,19 @@ import InterviewModal from './components/modals/interview/InterviewModal';
 import WeightSettingsModal from './components/modals/WeightSettingsModal';
 import ParseProgressModal from './components/modals/ParseProgressModal';
 
+function buildInitials(name: string) {
+  return name
+    .split(' ')
+    .filter(Boolean)
+    .map((part) => part[0].toUpperCase())
+    .slice(0, 2)
+    .join('');
+}
+
 function ATSContent() {
-  const { screen, navigate } = useATS();
+  const { screen, navigate, currentUserName } = useATS();
+  const userInitials = buildInitials(currentUserName || 'HR Team');
+  const userName = currentUserName || 'HR Team';
 
   return (
     <div className="flex min-h-screen bg-[#F8F7F4]">
@@ -43,10 +54,10 @@ function ATSContent() {
         {/* User at bottom */}
         <div className="mt-auto px-4 py-3.5 border-t border-stone-200 flex items-center gap-2.5">
           <div className="w-[30px] h-[30px] rounded-full bg-purple-100 flex items-center justify-center text-[11px] font-semibold text-purple-700 flex-shrink-0">
-            AN
+            {userInitials}
           </div>
           <div>
-            <div className="text-[12px] font-medium text-stone-800">Anchal</div>
+            <div className="text-[12px] font-medium text-stone-800">{userName}</div>
             <div className="text-[11px] text-stone-400">HR Manager</div>
           </div>
         </div>

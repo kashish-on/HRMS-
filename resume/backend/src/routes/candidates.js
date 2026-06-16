@@ -1364,15 +1364,28 @@
 // export default router;
 
 import express from "express";
+import multer from "multer";
 import { supabase } from "../lib/supabase.js";
 import {
   mapCandidateToDetail,
   mapCandidateToResultsRow,
   mapNote,
 } from "../lib/frontendMappers.js";
-import { sendInterviewNotifications, sendRejectionEmail } from "../services/notificationService.js";
+import {
+  sendInterviewNotifications,
+  sendRejectionEmail,
+  sendOfferEmail,
+} from "../services/notificationService.js";
  
 const router = express.Router();
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024,
+  },
+});
+
+const allowedOfferMimeTypes = new Set(["application/pdf"]);
  
 const ALLOWED_STAGES = new Set([
   "Applied",
@@ -1979,8 +1992,9 @@ router.post("/:id/interviews", async (req, res) => {
   }
 });
  
-router.post("/:id/offers", async (req, res) => {
+router.post("/:id/offers", upload.single("offerFile"), async (req, res) => {
   const { id } = req.params;
+  const file = req.file;
   const {
     job_id,
     designation,
@@ -1990,19 +2004,82 @@ router.post("/:id/offers", async (req, res) => {
     additional_note = null,
     status = "generated",
   } = req.body || {};
- 
+
   if (!job_id?.trim() || !designation?.trim()) {
     return res.status(400).json({
       status: "error",
       message: "job_id and designation are required.",
     });
   }
- 
+
+  if (!file) {
+    return res.status(400).json({
+      status: "error",
+      message: "Offer letter PDF is required.",
+    });
+  }
+
+  if (!allowedOfferMimeTypes.has(file.mimetype)) {
+    return res.status(400).json({
+      status: "error",
+      message: "Only PDF files are accepted for offer letters.",
+    });
+  }
+
   try {
-    const { data, error } = await supabase
+    const sanitizedName = file.originalname.replace(/\s+/g, "_");
+    const storagePath = `${job_id}/offer-${id}-${Date.now()}-${sanitizedName}`;
+
+    const { error: storageError } = await supabase.storage
+      .from("resume-files")
+      .upload(storagePath, file.buffer, {
+        upsert: false,
+        contentType: file.mimetype,
+      });
+
+    if (storageError) {
+      console.error("Offer file storage error:", storageError);
+      return res.status(500).json({
+        status: "error",
+        message: storageError.message,
+      });
+    }
+
+    const { data: publicUrlData } = supabase.storage
+      .from("resume-files")
+      .getPublicUrl(storagePath);
+
+    const offerPayload = {
+      candidate_id: id,
+      job_id: job_id.trim(),
+      designation: designation.trim(),
+      ctc,
+      joining_date,
+      reporting_to,
+      additional_note,
+      status,
+      offer_letter_url: publicUrlData?.publicUrl || null,
+      storage_bucket: "resume-files",
+      storage_path: storagePath,
+    };
+
+    let insertResponse = await supabase
       .from("resume_candidate_offers")
-      .insert([
-        {
+      .insert([offerPayload])
+      .select("*")
+      .single();
+
+    if (insertResponse.error) {
+      const missingColumn =
+        insertResponse.error.message?.includes("column") ||
+        insertResponse.error.code === "42703";
+
+      if (missingColumn) {
+        console.warn(
+          "Offer insert missing file metadata columns, retrying without offer_letter_url/storage fields."
+        );
+
+        const fallbackPayload = {
           candidate_id: id,
           job_id: job_id.trim(),
           designation: designation.trim(),
@@ -2011,19 +2088,56 @@ router.post("/:id/offers", async (req, res) => {
           reporting_to,
           additional_note,
           status,
-        },
-      ])
-      .select("*")
-      .single();
- 
-    if (error) {
-      console.error("Create candidate offer error:", error);
+        };
+
+        insertResponse = await supabase
+          .from("resume_candidate_offers")
+          .insert([fallbackPayload])
+          .select("*")
+          .single();
+      }
+    }
+
+    if (insertResponse.error) {
+      console.error("Create candidate offer error:", insertResponse.error);
       return res.status(500).json({
         status: "error",
-        message: error.message,
+        message: insertResponse.error.message,
       });
     }
- 
+
+    const [{ data: candidateRow, error: candidateError }, { data: jobRow, error: jobError }] =
+      await Promise.all([
+        supabase.from("resume_candidates").select("*").eq("id", id).maybeSingle(),
+        supabase.from("resume_jobs").select("*").eq("id", job_id.trim()).maybeSingle(),
+      ]);
+
+    if (candidateError || !candidateRow) {
+      console.warn("Offer created but candidate lookup failed.", candidateError?.message);
+    }
+
+    if (jobError || !jobRow) {
+      console.warn("Offer created but job lookup failed.", jobError?.message);
+    }
+
+    let notification = null;
+    if (candidateRow?.email) {
+      try {
+        notification = await sendOfferEmail({
+          candidate: candidateRow,
+          job: jobRow,
+          offer: insertResponse.data,
+          attachment: {
+            filename: file.originalname,
+            buffer: file.buffer,
+          },
+        });
+      } catch (notifErr) {
+        console.error("Offer email error (non-blocking):", notifErr.message || notifErr);
+        notification = { status: "error", error: notifErr.message || String(notifErr) };
+      }
+    }
+
     await supabase
       .from("resume_candidates")
       .update({
@@ -2031,11 +2145,12 @@ router.post("/:id/offers", async (req, res) => {
         status_updated_at: new Date().toISOString(),
       })
       .eq("id", id);
- 
+
     return res.status(201).json({
       status: "ok",
       message: "Offer saved successfully.",
-      offer: data,
+      offer: insertResponse.data,
+      notification,
     });
   } catch (error) {
     console.error("Unexpected create offer error:", error);

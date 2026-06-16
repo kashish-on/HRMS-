@@ -430,6 +430,8 @@ const createGmailTransporter = () => {
   return nodemailer.createTransport({
     service: "gmail",
     auth: { user, pass },
+    logger: true,
+    debug: true,
   });
 };
 
@@ -648,6 +650,108 @@ const buildRejectionEmailHtml = ({ candidateName, role, companyName, additionalN
 
 // ─── Send Rejection Email ─────────────────────────────────────────────────────
 
+const buildOfferEmailHtml = ({ candidateName, role, designation, ctc, joiningDate, reportingTo, additionalNote, companyName }) => `
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:'Helvetica Neue',Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:32px 16px;">
+    <tr><td align="center">
+      <table width="100%" style="max-width:560px;background:#ffffff;border-radius:12px;border:1px solid #e4e4e7;overflow:hidden;">
+        <tr>
+          <td style="background:#534AB7;padding:28px 32px;">
+            <p style="margin:0;font-size:20px;font-weight:700;color:#ffffff;">📄 Your Offer Letter</p>
+            <p style="margin:6px 0 0;font-size:13px;color:rgba(255,255,255,0.75);">${companyName || "ObserveNow People"}</p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:28px 32px;">
+            <p style="margin:0 0 16px;font-size:15px;color:#18181b;">Hi <strong>${candidateName}</strong>,</p>
+            <p style="margin:0 0 20px;font-size:14px;color:#52525b;line-height:1.6;">
+              Congratulations! We are pleased to share your offer details for the <strong>${designation || role}</strong> position.
+            </p>
+            <table width="100%" style="background:#f8f7ff;border-radius:8px;border:1px solid #ede9fe;margin-bottom:20px;">
+              <tr><td style="padding:20px 24px;">
+                <table width="100%" cellpadding="0" cellspacing="0">
+                  ${[
+                    ["Role", designation || role],
+                    ["CTC", ctc || "To be discussed"],
+                    ["Joining Date", joiningDate || "TBD"],
+                    ["Reporting To", reportingTo || "TBD"],
+                  ]
+                  .map(([label, val]) => `
+                    <tr>
+                      <td style="padding:5px 0;font-size:13px;color:#71717a;width:130px;vertical-align:top;">${label}</td>
+                      <td style="padding:5px 0;font-size:13px;color:#18181b;font-weight:500;">${val}</td>
+                    </tr>
+                  `).join("")}
+                </table>
+              </td></tr>
+            </table>
+            ${additionalNote ? `
+            <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:14px 18px;margin-bottom:20px;">
+              <p style="margin:0;font-size:13px;color:#78350f;"><strong>Note:</strong> ${additionalNote}</p>
+            </div>` : ""}
+            <p style="margin:0 0 16px;font-size:14px;color:#52525b;line-height:1.7;">
+              Your signed offer letter is attached to this email. Please review the document and reach out to HR if you have any questions.
+            </p>
+            <p style="margin:0;font-size:14px;color:#52525b;">We look forward to welcoming you to the team.</p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:24px 32px;border-top:1px solid #f4f4f5;background:#fafafa;">
+            <p style="margin:0;font-size:12px;color:#a1a1aa;text-align:center;">${companyName || "ObserveNow People"} · This is an automated message from our HR system.</p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>
+`;
+
+export const sendOfferEmail = async ({ candidate, job, offer, attachment }) => {
+  if (!candidate?.email) {
+    console.warn("sendOfferEmail: candidate has no email, skipping.");
+    return { status: "skipped", reason: "no email" };
+  }
+
+  const companyName = process.env.COMPANY_NAME || "ObserveNow People";
+  const role = job?.title || "the position";
+  const candidateName = candidate?.full_name || candidate?.name || "Candidate";
+  const subject = `Offer Letter for ${role} from ${companyName}`;
+
+  const emailOptions = {
+    to: candidate.email,
+    subject,
+    html: buildOfferEmailHtml({
+      candidateName,
+      role,
+      designation: offer.designation || role,
+      ctc: offer.ctc || "To be discussed",
+      joiningDate: offer.joining_date || offer.joiningDate || "TBD",
+      reportingTo: offer.reporting_to || offer.reportingTo || "TBD",
+      additionalNote: offer.additional_note || offer.additionalNote || "",
+      companyName,
+    }),
+    attachments: [],
+  };
+
+  if (attachment?.buffer && attachment.filename) {
+    console.log(`sendOfferEmail: attaching file name=${attachment.filename} size=${attachment.buffer.length}`);
+    emailOptions.attachments.push({
+      filename: attachment.filename,
+      content: attachment.buffer,
+      contentType: "application/pdf",
+    });
+  } else {
+    console.log('sendOfferEmail: no attachment buffer or filename present');
+  }
+
+  const result = await sendInterviewEmail(emailOptions);
+  return { status: "sent", ...result };
+};
+
 export const sendRejectionEmail = async (candidate, job, additionalNote = "") => {
   if (!candidate?.email) {
     console.warn("sendRejectionEmail: candidate has no email, skipping.");
@@ -678,20 +782,31 @@ export const sendInterviewEmail = async ({
   subject,
   html,
   replyTo,
+  attachments,
 }) => {
   const transporter = createGmailTransporter();
   const fromName = process.env.GMAIL_FROM_NAME || "ObserveNow People";
   const fromEmail = process.env.GMAIL_USER;
 
-  const info = await transporter.sendMail({
-    from: `"${fromName}" <${fromEmail}>`,
-    to: Array.isArray(to) ? to.join(", ") : to,
-    subject,
-    html,
-    replyTo: replyTo || fromEmail,
-  });
+  const recipient = Array.isArray(to) ? to.join(', ') : to;
+  console.log(`sendInterviewEmail: sending email to=${recipient} subject=${subject} attachments=${Array.isArray(attachments)?attachments.length:0}`);
 
-  return { messageId: info.messageId, accepted: info.accepted };
+  try {
+    const info = await transporter.sendMail({
+      from: `"${fromName}" <${fromEmail}>`,
+      to: recipient,
+      subject,
+      html,
+      replyTo: replyTo || fromEmail,
+      attachments: attachments && attachments.length ? attachments : undefined,
+    });
+
+    console.log('sendInterviewEmail: sent', { messageId: info.messageId, accepted: info.accepted });
+    return { messageId: info.messageId, accepted: info.accepted };
+  } catch (err) {
+    console.error('sendInterviewEmail error:', err && err.message ? err.message : err);
+    throw err;
+  }
 };
 
 // ─── WhatsApp Business API (Meta Cloud API) ───────────────────────────────────

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useATS } from '../../context/ATSContext';
 
 export default function OfferScreen() {
@@ -10,14 +10,35 @@ export default function OfferScreen() {
     setOfferForm,
     submitOffer,
     rejectCurrentCandidate,
+    currentUserName,
   } = useATS();
+  const currentUserDisplayName = currentUserName || 'HR Team';
   const [preview, setPreview] = useState<'idle' | 'offer' | 'rejection'>('idle');
+  const [offerFile, setOfferFile] = useState<File | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isSending, setIsSending] = useState(false);
+  const [isOfferSent, setIsOfferSent] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   if (!currentCandidate || !currentRecord) return null;
 
   async function generateOffer() {
-    await submitOffer();
-    setPreview('offer');
+    if (!offerFile) {
+      setError('Please upload the offer letter PDF before sending.');
+      return;
+    }
+
+    setError(null);
+    setIsSending(true);
+    try {
+      await submitOffer(offerFile);
+      setPreview('offer');
+      setIsOfferSent(true);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to send offer letter');
+    } finally {
+      setIsSending(false);
+    }
   }
 
   async function sendRejection() {
@@ -73,9 +94,41 @@ export default function OfferScreen() {
               />
             </div>
 
+            <div className="mb-4">
+              <label className="block text-[12px] font-medium text-stone-500 mb-1.5">Offer letter PDF</label>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="application/pdf"
+                className="hidden"
+                onChange={(e) => setOfferFile(e.target.files?.[0] || null)}
+              />
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                className="flex cursor-pointer items-center justify-between gap-3 rounded-md border border-dashed border-stone-300 bg-[#f8f7ff] px-4 py-3 text-[13px] text-stone-600 hover:border-purple-500 hover:bg-[#f2efff]"
+              >
+                <span>{offerFile ? offerFile.name : 'Click to upload offer letter PDF'}</span>
+                <span className="text-[#6f2dbd] text-xs font-medium">Upload</span>
+              </div>
+            </div>
+
+            {error && (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700 mb-3">
+                {error}
+              </div>
+            )}
+
             <div className="flex gap-2">
-              <button onClick={() => void generateOffer()} className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#534AB7] text-white text-xs font-medium rounded-md hover:bg-[#453da0] transition-colors">
-                Generate offer letter
+              <button
+                onClick={() => void generateOffer()}
+                disabled={isSending || isOfferSent}
+                className={`inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-md transition-colors ${
+                  isSending || isOfferSent
+                    ? 'bg-stone-200 text-stone-500 cursor-not-allowed'
+                    : 'bg-[#534AB7] text-white hover:bg-[#453da0]'
+                }`}
+              >
+                {isSending ? 'Sending...' : isOfferSent ? 'Sent' : 'Send offer letter'}
               </button>
               <button onClick={() => void sendRejection()} className="inline-flex items-center gap-1.5 px-4 py-2 border border-red-200 bg-white text-red-700 text-xs font-medium rounded-md hover:bg-red-50 transition-colors">
                 Send rejection
@@ -87,7 +140,7 @@ export default function OfferScreen() {
           <div className="bg-white border border-stone-200 rounded-xl p-[18px] min-h-[300px]">
             {preview === 'idle' && (
               <div className="flex items-center justify-center h-full min-h-[200px] text-[13px] text-stone-400">
-                Fill the form and click "Generate offer letter"
+                Fill the form, upload the offer PDF, and click "Send offer letter"
               </div>
             )}
 
@@ -111,7 +164,7 @@ export default function OfferScreen() {
                 <br />
                 <p>We look forward to welcoming you to the team.</p>
                 <br />
-                <p>Warm regards,<br /><strong>Anchal</strong><br />HR Manager, ObserveNow People</p>
+                <p>Warm regards,<br /><strong>{currentUserDisplayName}</strong><br />HR Manager, ObserveNow People</p>
               </div>
             )}
 
@@ -126,7 +179,7 @@ export default function OfferScreen() {
                 <br />
                 <p>We appreciate your time and wish you all the best in your job search.</p>
                 <br />
-                <p>Warm regards,<br /><strong>Anchal</strong><br />HR Manager</p>
+                <p>Warm regards,<br /><strong>{currentUserDisplayName}</strong><br />HR Manager</p>
               </div>
             )}
           </div>

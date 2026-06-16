@@ -8,6 +8,7 @@ import InterviewModal from './components/modals/interview/InterviewModal';
 import WeightSettingsModal from './components/modals/WeightSettingsModal';
 import ParseProgressModal from './components/modals/ParseProgressModal';
 import { supabase } from './lib/supabase';
+import CareerPortal from './pages/CareerPortal';
 
 interface UserInfo {
   name: string;
@@ -211,8 +212,14 @@ function ATSContent() {
 }
 
 export default function App() {
+  const currentUser = useCurrentUser();
+
+  if (window.location.pathname.startsWith('/careers')) {
+    return <CareerPortal />;
+  }
+  
   return (
-    <ATSProvider>
+    <ATSProvider currentUserName={currentUser.name}>
       <ATSContent />
     </ATSProvider>
   );
