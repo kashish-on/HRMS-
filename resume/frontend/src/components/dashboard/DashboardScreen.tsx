@@ -817,7 +817,7 @@ export default function DashboardScreen() {
                     <path d="M3 2.5h10v11H3z" />
                   </svg>
                 </span>
-                Previous Records
+                Recent Records
               </div>
 
               <div className="flex items-center gap-2">

@@ -464,7 +464,7 @@ const inductionItems = hasInductionDetails
   return (
     <div className="space-y-6">
       {/* Page Title */}
-      <h1 className="text-2xl font-bold text-foreground">Employee Detail</h1>
+      <h1 className="text-2xl font-bold text-foreground">Candidate Detail</h1>
 
       {isLoading ? (
         <Card>

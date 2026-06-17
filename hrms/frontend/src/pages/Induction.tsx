@@ -136,7 +136,7 @@ export default function InductionPage() {
     <CandidateWrapper>
       <div className="flex w-full">
         <div className="flex-1 p-6 space-y-6">
-          <h1 className="text-2xl font-bold">Employee Detail</h1>
+          <h1 className="text-2xl font-bold">Candidate Detail</h1>
 
           <Card>
             <CardHeader>

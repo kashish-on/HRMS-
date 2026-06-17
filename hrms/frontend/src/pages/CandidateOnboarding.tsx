@@ -362,7 +362,7 @@ const handleSubmit = async () => {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Employee Onboarding</h1>
+      <h1 className="text-2xl font-bold">Candidate Onboarding</h1>
 
       {/* PERSONAL INFO */}
       <Card>
