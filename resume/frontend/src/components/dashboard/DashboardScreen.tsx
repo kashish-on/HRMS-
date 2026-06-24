@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
-import { toggleJobStatus } from '../../lib/api';
+import { request, toggleJobStatus } from '../../lib/api';
+import { supabase } from '../../lib/supabase';
 import { useATS } from '../../context/ATSContext';
 import type { ParseRecord } from '../../types';
 import { getScoreBg } from '../../lib/utils';
@@ -178,25 +179,25 @@ export default function DashboardScreen() {
     setCreatingJob(true);
     setCreateJobError(null);
     try {
-      const res = await fetch(`${API_BASE}/jobs`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: newJobTitle.trim(),
-          job_profile: newJobProfile.trim(),
-          location: newJobLocation.trim() || null,
-          min_experience: Number(newJobMinExp) || 0,
-          max_experience: newJobMaxExp ? Number(newJobMaxExp) : null,
-          description: newJobDescription.trim() || null,
-          required_skills: newJobReqSkills.split(',').map(s => s.trim()).filter(Boolean),
-          optional_skills: newJobOptSkills.split(',').map(s => s.trim()).filter(Boolean),
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'Failed to create job.');
-      // Add to local list and auto-select it
+      const data = await request<{ status: string; message: string; job: { id: string; title: string; job_profile: string } }>(
+        '/jobs',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            title: newJobTitle.trim(),
+            job_profile: newJobProfile.trim(),
+            location: newJobLocation.trim() || null,
+            min_experience: Number(newJobMinExp) || 0,
+            max_experience: newJobMaxExp ? Number(newJobMaxExp) : null,
+            description: newJobDescription.trim() || null,
+            required_skills: newJobReqSkills.split(',').map((s) => s.trim()).filter(Boolean),
+            optional_skills: newJobOptSkills.split(',').map((s) => s.trim()).filter(Boolean),
+          }),
+        }
+      );
+
       const created = { id: data.job.id, title: data.job.title, job_profile: data.job.job_profile };
-      setPortalJobs(prev => [created, ...prev]);
+      setPortalJobs((prev) => [created, ...prev]);
       setSelectedJobId(data.job.id);
       setPortalSuccess(`Job "${data.job.title}" created and selected.`);
       setShowCreateJob(false);
@@ -210,13 +211,35 @@ export default function DashboardScreen() {
 
   // Fetch jobs once for the job selector
   useEffect(() => {
-    (async () => {
+    let mounted = true;
+
+    const loadJobs = async () => {
       try {
-        const res = await fetch(`${API_BASE}/jobs`);
-        const data = await res.json();
-        setPortalJobs((data.jobs || []).map((j: JobOption) => ({ id: j.id, title: j.title, job_profile: j.job_profile })));
-      } catch (_) { /* silent */ }
-    })();
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          return;
+        }
+
+        const data = await request<{ jobs?: JobOption[] }>('/jobs');
+        if (!mounted) return;
+        setPortalJobs((data.jobs || []).map((j) => ({ id: j.id, title: j.title, job_profile: j.job_profile })));
+      } catch (error) {
+        console.error('Failed to load portal jobs', error);
+      }
+    };
+
+    loadJobs();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        loadJobs();
+      }
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   // Fetch portal uploads whenever selected job changes
@@ -225,9 +248,7 @@ export default function DashboardScreen() {
     setPortalLoading(true);
     setPortalError(null);
     try {
-      const res = await fetch(`${API_BASE}/resumes?job_id=${jobId}&source=portal`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'Failed to load portal uploads.');
+      const data = await request<{ resumes?: PortalUpload[] }>(`/resumes?job_id=${jobId}&source=portal`);
       // Filter to portal-sourced uploads only (backend may return all for the job)
       const filtered = (data.resumes || []).filter(
         (u: PortalUpload & { source?: string }) => u.source === 'portal' || !u.source
@@ -252,9 +273,7 @@ export default function DashboardScreen() {
     setPortalError(null);
     setPortalSuccess(null);
     try {
-      const res = await fetch(`${API_BASE}/resumes/parse/${uploadId}`, { method: 'POST' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'Parse failed.');
+      const data = await request<{ parsedPreview?: { fullName?: string } }>(`/resumes/parse/${uploadId}`, { method: 'POST' });
       setPortalSuccess(`Parsed successfully: ${data.parsedPreview?.fullName || 'Resume'}`);
       // Refresh the list
       await fetchPortalUploads(selectedJobId);
@@ -517,7 +536,7 @@ export default function DashboardScreen() {
                     <option value=""> Select a job to view applications </option>
                     {portalJobs.map((j) => (
                       <option key={j.id} value={j.id}>{j.title} ({j.job_profile})</option>
-                    ))}``
+                    ))}
                     </select>
                     <svg className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#6f627f]" width="10" height="6" viewBox="0 0 12 8" fill="none" xmlns="http://www.w3.org/2000/svg">
                       <path d="M1 1L6 6L11 1" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>

@@ -15,15 +15,13 @@ const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001/ap
 // caller is a logged-in HR user. Public /careers/* endpoints skip this by
 // using requestPublic() below.
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // Retrieve the current session token
   const { data: { session } } = await supabase.auth.getSession();
   const token = session?.access_token;
 
   if (!token) {
-    // Session expired or user was signed out — redirect to login cleanly
-    await supabase.auth.signOut();
-    throw new Error('Your session has expired. Please sign in again.');
+    throw new Error('No auth token available.');
   }
 
   const response = await fetch(`${API_BASE}${path}`, {
