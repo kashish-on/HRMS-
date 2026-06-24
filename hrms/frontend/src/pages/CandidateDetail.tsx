@@ -1040,9 +1040,7 @@ import {
   Clock3,
   CircleDotDashed,
   UserRoundCheck,
-  HeartPulse,
   Linkedin,
-  PhoneCall,
 } from "lucide-react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
