@@ -13,7 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { CalendarDays, UploadCloud } from "lucide-react";
+import { CalendarDays, UploadCloud, Loader2, CheckCircle2 } from "lucide-react";
 
 import personalIcon from "@/assets/personal.png";
 import jobIcon from "@/assets/job.png";
@@ -24,38 +24,94 @@ import { uploadFileToBackend } from "@/lib/backendUpload";
 
 const normalizeEmployeeType = (value?: string | null) => {
   if (!value) return "";
-
   const normalizedValue = value.trim().toLowerCase();
-
   if (normalizedValue === "full" || normalizedValue === "full-time" || normalizedValue === "full time") {
     return "Full Time";
   }
-
   if (normalizedValue === "intern") {
     return "Intern";
   }
-
   return value;
 };
 
 const uploadOfferLetter = async (candidateId: string, file: File) => {
   const fileExt = file.name.split(".").pop() || "pdf";
   const filePath = `offer-letters/${candidateId}/${Date.now()}.${fileExt}`;
-
   const { publicUrl } = await uploadFileToBackend(file, {
     bucket: "documents",
     path: filePath,
     employeeId: candidateId,
   });
-
   return publicUrl;
 };
+
+// ── Loading overlay shown while candidate is being created ───────────────────
+
+type CreatingStep = "user" | "photo" | "candidate" | "profile" | "tasks" | "done";
+
+const STEP_LABELS: Record<CreatingStep, string> = {
+  user:      "Creating account…",
+  photo:     "Uploading photo & documents…",
+  candidate: "Saving candidate details…",
+  profile:   "Setting up profile…",
+  tasks:     "Creating onboarding tasks…",
+  done:      "Almost done…",
+};
+
+function CreatingOverlay({ step }: { step: CreatingStep }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div className="w-[340px] rounded-2xl bg-white px-8 py-8 shadow-2xl text-center space-y-5">
+        {/* Spinner */}
+        <div className="flex justify-center">
+          <div className="relative flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          </div>
+        </div>
+
+        <div className="space-y-1">
+          <p className="text-[15px] font-semibold text-foreground">Creating Candidate</p>
+          <p className="text-[13px] text-muted-foreground">{STEP_LABELS[step]}</p>
+        </div>
+
+        {/* Step dots */}
+        <div className="flex items-center justify-center gap-2">
+          {(["user", "photo", "candidate", "profile", "tasks"] as CreatingStep[]).map((s) => {
+            const steps: CreatingStep[] = ["user", "photo", "candidate", "profile", "tasks", "done"];
+            const currentIdx = steps.indexOf(step);
+            const thisIdx = steps.indexOf(s);
+            const isDone = thisIdx < currentIdx;
+            const isActive = thisIdx === currentIdx;
+            return (
+              <div
+                key={s}
+                className={`h-2 rounded-full transition-all duration-300 ${
+                  isDone
+                    ? "w-2 bg-primary"
+                    : isActive
+                    ? "w-5 bg-primary"
+                    : "w-2 bg-muted"
+                }`}
+              />
+            );
+          })}
+        </div>
+
+        <p className="text-[11px] text-muted-foreground">
+          Please wait, do not close or refresh this page.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
 
 const CandidateOnboarding = () => {
   const navigate = useNavigate();
   const loginUrl = getLoginUrl();
 
-  /* 🔥 FORM STATE */
+  /* FORM STATE */
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -75,15 +131,17 @@ const CandidateOnboarding = () => {
 
   const [departments, setDepartments] = useState<any[]>([]);
 
-  /* ✅ NEW STATES (POPUP) */
+  /* POPUP STATE */
   const [showPopup, setShowPopup] = useState(false);
   const [generatedPassword, setGeneratedPassword] = useState("");
   const [savingDraft, setSavingDraft] = useState(false);
 
+  /* ✅ LOADING STATE */
+  const [isCreating, setIsCreating] = useState(false);
+  const [creatingStep, setCreatingStep] = useState<CreatingStep>("user");
+
   /* PASSWORD GENERATOR */
-  const generatePassword = () => {
-    return Math.random().toString(36).slice(-8);
-  };
+  const generatePassword = () => Math.random().toString(36).slice(-8);
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -93,17 +151,10 @@ const CandidateOnboarding = () => {
   /* FETCH DEPARTMENTS */
   useEffect(() => {
     const fetchDepartments = async () => {
-      console.log("Fetching departments...");
       const { data, error } = await supabase.from("departments").select("*");
-
-      console.log("Departments data:", data);
-      console.log("Departments error:", error);
-
       if (!error && data && data.length > 0) {
         setDepartments(data);
       } else {
-        // If no departments exist, seed some default ones
-        console.log("No departments found, seeding default departments...");
         const defaultDepartments = [
           { id: "hr", name: "Human Resources" },
           { id: "it", name: "Information Technology" },
@@ -112,38 +163,26 @@ const CandidateOnboarding = () => {
           { id: "sales", name: "Sales" },
           { id: "operations", name: "Operations" },
         ];
-
-        // Try to insert default departments
         const { data: insertedData, error: insertError } = await supabase
           .from("departments")
           .insert(defaultDepartments)
           .select();
-
         if (!insertError && insertedData) {
-          console.log("Default departments inserted:", insertedData);
           setDepartments(insertedData);
         } else {
-          console.error("Error inserting default departments:", insertError);
-          // Fallback to hardcoded departments for now
           setDepartments(defaultDepartments);
         }
       }
     };
-
     fetchDepartments();
   }, []);
 
   /* PHOTO HANDLER */
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-
     if (file) {
       const validationError = validateProfilePhoto(file);
-      if (validationError) {
-        alert(validationError);
-        return;
-      }
-
+      if (validationError) { alert(validationError); return; }
       setPhotoFile(file);
       setPhoto(URL.createObjectURL(file));
     }
@@ -151,19 +190,9 @@ const CandidateOnboarding = () => {
 
   /* OFFER FILE HANDLER */
   const handleOfferFile = (file: File) => {
-    const isPdf =
-      file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
-
-    if (!isPdf) {
-      alert("Only PDF files are allowed for the unsigned offer letter.");
-      return;
-    }
-
-    if (file.size > 5 * 1024 * 1024) {
-      alert("File must be less than 5MB");
-      return;
-    }
-
+    const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+    if (!isPdf) { alert("Only PDF files are allowed for the unsigned offer letter."); return; }
+    if (file.size > 5 * 1024 * 1024) { alert("File must be less than 5MB"); return; }
     setOfferFile(file);
   };
 
@@ -173,58 +202,39 @@ const CandidateOnboarding = () => {
     if (file) handleOfferFile(file);
   };
 
-  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-  };
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => { e.preventDefault(); };
 
+  /* SAVE DRAFT */
   const handleSaveDraft = async () => {
     if (savingDraft) return;
-
     if (!name.trim() || !email.trim()) {
       alert("Please enter at least Full Name and Email to save a draft.");
       return;
     }
-
     try {
       setSavingDraft(true);
-
       const draftId = crypto.randomUUID();
       let uploadedPhotoUrl: string | null = null;
       let uploadedOfferLetterUrl: string | null = null;
-
-      if (photoFile) {
-        uploadedPhotoUrl = await uploadProfilePhoto(draftId, photoFile);
-      }
-
-      if (offerFile) {
-        uploadedOfferLetterUrl = await uploadOfferLetter(draftId, offerFile);
-      }
-
-      const { error } = await supabase.from("candidates").insert([
-        {
-          id: draftId,
-          name,
-          email,
-          phone: phone || null,
-          address: address || null,
-          date_of_birth: dob || null,
-          designation: designation || null,
-          reporting_manager: manager || null,
-          department_id: department || null,
-          type: employeeType ? normalizeEmployeeType(employeeType) : null,
-          photo_url: uploadedPhotoUrl,
-          offer_letter_url: uploadedOfferLetterUrl,
-          joining_date: joiningDate || null,
-          salary: salary ? Number(salary) : null,
-          status: "draft",
-          onboarding_status: "draft",
-        },
-      ]);
-
-      if (error) {
-        throw error;
-      }
-
+      if (photoFile) uploadedPhotoUrl = await uploadProfilePhoto(draftId, photoFile);
+      if (offerFile) uploadedOfferLetterUrl = await uploadOfferLetter(draftId, offerFile);
+      const { error } = await supabase.from("candidates").insert([{
+        id: draftId, name, email,
+        phone: phone || null,
+        address: address || null,
+        date_of_birth: dob || null,
+        designation: designation || null,
+        reporting_manager: manager || null,
+        department_id: department || null,
+        type: employeeType ? normalizeEmployeeType(employeeType) : null,
+        photo_url: uploadedPhotoUrl,
+        offer_letter_url: uploadedOfferLetterUrl,
+        joining_date: joiningDate || null,
+        salary: salary ? Number(salary) : null,
+        status: "draft",
+        onboarding_status: "draft",
+      }]);
+      if (error) throw error;
       alert("Draft saved successfully.");
       navigate("/dashboard");
     } catch (error: any) {
@@ -234,134 +244,107 @@ const CandidateOnboarding = () => {
     }
   };
 
-const handleSubmit = async () => {
-  try {
-    /* STEP 1: GENERATE PASSWORD */
-    const password = generatePassword();
-    console.log("Generated password:", password);
+  /* SUBMIT */
+  const handleSubmit = async () => {
+    if (isCreating) return; // prevent double click
 
-    // Check current session before user creation
-    const { data: sessionBefore } = await supabase.auth.getSession();
-    console.log("Session before user creation:", sessionBefore?.session?.user?.email);
-
-    /* STEP 2: CREATE AUTH USER VIA BACKEND */
-    const createUserResult = await createUserViaBackend(email, password);
-
-    if (!createUserResult.userId) {
-      console.error("User creation failed:", createUserResult);
-      alert("User creation failed");
+    if (!name.trim() || !email.trim()) {
+      alert("Please enter at least Full Name and Email.");
       return;
     }
 
-    const userId = createUserResult.userId;
-    console.log("Created user ID:", userId);
+    try {
+      setIsCreating(true);
 
-    // Check session after user creation
-    const { data: sessionAfter } = await supabase.auth.getSession();
-    console.log("Session after user creation:", sessionAfter?.session?.user?.email);
+      /* STEP 1: CREATE AUTH USER */
+      setCreatingStep("user");
+      const password = generatePassword();
+      const createUserResult = await createUserViaBackend(email, password);
 
-    let uploadedPhotoUrl: string | null = null;
-    let uploadedOfferLetterUrl: string | null = null;
-    if (photoFile) {
-      console.log("Uploading photo...");
-      uploadedPhotoUrl = await uploadProfilePhoto(userId, photoFile);
-      console.log("Photo uploaded:", uploadedPhotoUrl);
+      if (!createUserResult.userId) {
+        alert("User creation failed");
+        return;
+      }
+
+      const userId = createUserResult.userId;
+
+      /* STEP 2: UPLOAD FILES */
+      setCreatingStep("photo");
+      let uploadedPhotoUrl: string | null = null;
+      let uploadedOfferLetterUrl: string | null = null;
+      if (photoFile) uploadedPhotoUrl = await uploadProfilePhoto(userId, photoFile);
+      if (offerFile) uploadedOfferLetterUrl = await uploadOfferLetter(userId, offerFile);
+
+      /* STEP 3: INSERT CANDIDATE */
+      setCreatingStep("candidate");
+      const { error: candidateError } = await supabase.from("candidates").insert([{
+        id: userId,
+        name, email, phone, address,
+        date_of_birth: dob,
+        designation,
+        reporting_manager: manager,
+        department_id: department,
+        type: normalizeEmployeeType(employeeType),
+        photo_url: uploadedPhotoUrl,
+        offer_letter_url: uploadedOfferLetterUrl,
+        joining_date: joiningDate,
+        salary: salary ? Number(salary) : null,
+        status: "onboarding",
+        onboarding_status: "pending",
+      }]);
+
+      if (candidateError) {
+        alert(candidateError.message);
+        return;
+      }
+
+      /* STEP 4: INSERT PROFILE */
+      setCreatingStep("profile");
+      const { error: profileError } = await supabase.from("profiles").upsert([{
+        id: userId,
+        email,
+        role: "candidate",
+      }]);
+
+      if (profileError) {
+        alert(profileError.message);
+        return;
+      }
+
+      /* STEP 5: INSERT TASKS */
+      setCreatingStep("tasks");
+      const { error: taskError } = await supabase.from("onboarding_tasks").insert([{
+        employee_id: userId,
+        document_submitted: false,
+        hr_verification: false,
+        asset_assigned: false,
+        offer_accepted: true,
+      }]);
+
+      if (taskError) {
+        alert(taskError.message);
+        return;
+      }
+
+      /* STEP 6: SHOW POPUP */
+      setCreatingStep("done");
+      setGeneratedPassword(password);
+      setIsCreating(false);
+      setShowPopup(true);
+
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setIsCreating(false);
     }
-    if (offerFile) {
-      console.log("Uploading unsigned offer letter...");
-      uploadedOfferLetterUrl = await uploadOfferLetter(userId, offerFile);
-      console.log("Unsigned offer letter uploaded:", uploadedOfferLetterUrl);
-    }
-
-    /* ✅ STEP 3: INSERT INTO CANDIDATES FIRST */
-    console.log("Inserting candidate data...");
-    const { error: candidateError } = await supabase
-      .from("candidates")
-      .insert([
-        {
-          id: userId, // 🔥 SAME ID
-          name,
-          email,
-          phone,
-            address,
-            date_of_birth: dob,
-            designation,
-            reporting_manager: manager,
-            department_id: department,
-            type: normalizeEmployeeType(employeeType),
-            photo_url: uploadedPhotoUrl,
-            offer_letter_url: uploadedOfferLetterUrl,
-            joining_date: joiningDate,
-          salary: salary ? Number(salary) : null,
-          status: "onboarding",
-          onboarding_status: "pending",
-        },
-      ]);
-
-    if (candidateError) {
-      console.error("Candidate insert error:", candidateError);
-      alert(candidateError.message);
-      return;
-    }
-
-    /* ✅ STEP 4: INSERT INTO PROFILES */
-    console.log("Inserting profile data...");
-    const { error: profileError } = await supabase
-      .from("profiles")
-      .upsert([
-        {
-          id: userId,
-          email,
-          role: "candidate",
-        },
-      ]);
-
-    if (profileError) {
-      console.error("Profile insert error:", profileError);
-      alert(profileError.message);
-      return;
-    }
-
-    /* ✅ STEP 5: INSERT INTO TASKS (NOW SAFE) */
-    console.log("Inserting onboarding tasks...");
-    const { error: taskError } = await supabase
-      .from("onboarding_tasks")
-      .insert([
-        {
-          employee_id: userId, // 🔥 NOW EXISTS
-          document_submitted: false,
-          hr_verification: false,
-          asset_assigned: false,
-          offer_accepted: true,
-        },
-      ]);
-
-    if (taskError) {
-      console.error("Task insert error:", taskError);
-      alert(taskError.message);
-      return;
-    }
-
-    console.log("All steps completed successfully!");
-    /* STEP 6: POPUP */
-    console.log("Setting popup state...");
-    setGeneratedPassword(password);
-    setShowPopup(true);
-    console.log("Popup should now be visible - showPopup:", showPopup, "generatedPassword:", generatedPassword);
-
-    // Add a small delay to ensure state updates
-    setTimeout(() => {
-      console.log("Timeout check - showPopup:", showPopup, "generatedPassword:", generatedPassword);
-    }, 100);
-
-  } catch (err: any) {
-    console.error("Unexpected error in handleSubmit:", err);
-    alert(err.message);
-  }
-};
+  };
 
   return (
     <div className="space-y-6">
+
+      {/* ✅ Loading overlay — shown while creating */}
+      {isCreating && <CreatingOverlay step={creatingStep} />}
+
       <h1 className="text-2xl font-bold">Candidate Onboarding</h1>
 
       {/* PERSONAL INFO */}
@@ -380,7 +363,6 @@ const handleSubmit = async () => {
               onChange={handleFileChange}
               className="absolute inset-0 opacity-0"
             />
-
             {photo ? (
               <img src={photo} className="h-20 w-20 rounded-full object-cover border border-border" />
             ) : (
@@ -388,9 +370,7 @@ const handleSubmit = async () => {
                 <div className="flex h-16 w-16 items-center justify-center rounded-full border border-dashed border-border">
                   <UploadCloud className="h-5 w-5 text-muted-foreground" />
                 </div>
-                <p className="mt-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                  Add Photo
-                </p>
+                <p className="mt-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Add Photo</p>
                 <p className="mt-1 text-[10px] text-muted-foreground">JPG or PNG, max 5MB</p>
               </>
             )}
@@ -448,9 +428,7 @@ const handleSubmit = async () => {
               </SelectTrigger>
               <SelectContent>
                 {departments.map((dept) => (
-                  <SelectItem key={dept.id} value={dept.id}>
-                    {dept.name}
-                  </SelectItem>
+                  <SelectItem key={dept.id} value={dept.id}>{dept.name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -521,12 +499,8 @@ const handleSubmit = async () => {
               type="file"
               accept="application/pdf,.pdf"
               className="absolute inset-0 opacity-0"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) handleOfferFile(file);
-              }}
+              onChange={(e) => { const file = e.target.files?.[0]; if (file) handleOfferFile(file); }}
             />
-
             {offerFile ? (
               <div className="space-y-1">
                 <p className="text-sm font-medium text-foreground">{offerFile.name}</p>
@@ -567,53 +541,64 @@ const handleSubmit = async () => {
         </CardContent>
       </Card>
 
-      {/* ACTION */}
+      {/* ACTION BUTTONS */}
       <div className="flex justify-end gap-2">
-        <Button variant="secondary" onClick={handleSaveDraft} disabled={savingDraft}>
+        <Button variant="secondary" onClick={handleSaveDraft} disabled={savingDraft || isCreating}>
           {savingDraft ? "Saving Draft..." : "Save Draft"}
         </Button>
-        <Button onClick={handleSubmit} className="bg-primary text-white">
-          Send & Start Onboarding
+        <Button
+          onClick={handleSubmit}
+          disabled={isCreating}
+          className="bg-primary text-white min-w-[180px]"
+        >
+          {isCreating ? (
+            <span className="flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Creating…
+            </span>
+          ) : (
+            "Send & Start Onboarding"
+          )}
         </Button>
       </div>
 
-      {/* 🔥 POPUP */}
+      {/* CREDENTIALS POPUP */}
       {showPopup && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 w-[400px] space-y-4 shadow-lg">
-
-            <h2 className="text-lg font-semibold">Login Credentials</h2>
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-5 w-5 text-green-500" />
+              <h2 className="text-lg font-semibold">Candidate Created!</h2>
+            </div>
+            <p className="text-[13px] text-muted-foreground">Share these login credentials with the candidate.</p>
 
             <div>
-              <p className="text-xs text-muted-foreground">Login URL</p>
-              <div className="flex justify-between bg-muted p-2 rounded">
-                <span>{loginUrl}</span>
-                <button onClick={() => copyToClipboard(loginUrl)}>Copy</button>
+              <p className="text-xs text-muted-foreground mb-1">Login URL</p>
+              <div className="flex justify-between items-center bg-muted p-2 rounded">
+                <span className="text-sm truncate">{loginUrl}</span>
+                <button className="text-xs text-primary ml-2 shrink-0" onClick={() => copyToClipboard(loginUrl)}>Copy</button>
               </div>
             </div>
 
             <div>
-              <p className="text-xs text-muted-foreground">Email</p>
-              <div className="flex justify-between bg-muted p-2 rounded">
-                <span>{email}</span>
-                <button onClick={() => copyToClipboard(email)}>Copy</button>
+              <p className="text-xs text-muted-foreground mb-1">Email</p>
+              <div className="flex justify-between items-center bg-muted p-2 rounded">
+                <span className="text-sm">{email}</span>
+                <button className="text-xs text-primary ml-2 shrink-0" onClick={() => copyToClipboard(email)}>Copy</button>
               </div>
             </div>
 
             <div>
-              <p className="text-xs text-muted-foreground">Password</p>
-              <div className="flex justify-between bg-muted p-2 rounded">
-                <span>{generatedPassword}</span>
-                <button onClick={() => copyToClipboard(generatedPassword)}>Copy</button>
+              <p className="text-xs text-muted-foreground mb-1">Password</p>
+              <div className="flex justify-between items-center bg-muted p-2 rounded">
+                <span className="text-sm font-mono">{generatedPassword}</span>
+                <button className="text-xs text-primary ml-2 shrink-0" onClick={() => copyToClipboard(generatedPassword)}>Copy</button>
               </div>
             </div>
 
             <Button
               className="w-full"
-              onClick={() => {
-                setShowPopup(false);
-                navigate("/dashboard");
-              }}
+              onClick={() => { setShowPopup(false); navigate("/dashboard"); }}
             >
               Done
             </Button>
@@ -625,4 +610,3 @@ const handleSubmit = async () => {
 };
 
 export default CandidateOnboarding;
-
