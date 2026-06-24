@@ -8,8 +8,6 @@ import { getScoreBg } from '../../lib/utils';
 
 // ── Portal upload helpers ─────────────────────────────────────────────────────
 
-const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001/api').replace(/\/$/, '');
-
 interface PortalUpload {
   id: string;
   original_file_name: string;
