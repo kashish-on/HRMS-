@@ -149,6 +149,7 @@ export default function DashboardScreen() {
   const [portalUploads, setPortalUploads] = useState<PortalUpload[]>([]);
   const [portalLoading, setPortalLoading] = useState(false);
   const [parsingIds, setParsingIds] = useState<Set<string>>(new Set());
+  const [scoringIds, setScoringIds] = useState<Set<string>>(new Set());
   const [portalError, setPortalError] = useState<string | null>(null);
   const [portalSuccess, setPortalSuccess] = useState<string | null>(null);
 
@@ -271,14 +272,35 @@ export default function DashboardScreen() {
     setPortalError(null);
     setPortalSuccess(null);
     try {
-      const data = await request<{ parsedPreview?: { fullName?: string } }>(`/resumes/parse/${uploadId}`, { method: 'POST' });
-      setPortalSuccess(`Parsed successfully: ${data.parsedPreview?.fullName || 'Resume'}`);
+      const data = await request<{ parsedPreview?: { fullName?: string }; scorecard?: { total_score?: number } }>(`/resumes/parse/${uploadId}`, { method: 'POST' });
+      const scoreText = data.scorecard?.total_score != null ? ` Score: ${data.scorecard.total_score}` : '';
+      setPortalSuccess(`Parsed and scored successfully: ${data.parsedPreview?.fullName || 'Resume'}${scoreText}`);
       // Refresh the list
       await fetchPortalUploads(selectedJobId);
     } catch (err: unknown) {
       setPortalError(err instanceof Error ? err.message : 'Parse failed.');
     } finally {
       setParsingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(uploadId);
+        return next;
+      });
+    }
+  };
+
+  const handleScorePortalUpload = async (uploadId: string) => {
+    setScoringIds((prev) => new Set(prev).add(uploadId));
+    setPortalError(null);
+    setPortalSuccess(null);
+    try {
+      const data = await request<{ scorecard?: { total_score?: number }; message?: string }>(`/resumes/score/${uploadId}`, { method: 'POST' });
+      const scoreText = data.scorecard?.total_score != null ? ` Score: ${data.scorecard.total_score}` : '';
+      setPortalSuccess(`Rescored successfully.${scoreText}`);
+      await fetchPortalUploads(selectedJobId);
+    } catch (err: unknown) {
+      setPortalError(err instanceof Error ? err.message : 'Rescore failed.');
+    } finally {
+      setScoringIds((prev) => {
         const next = new Set(prev);
         next.delete(uploadId);
         return next;
@@ -807,7 +829,14 @@ export default function DashboardScreen() {
                                     {parsingIds.has(u.id) ? 'Parsing…' : 'Parse'}
                                   </button>
                                 ) : u.parse_status === 'parsed' ? (
-                                  <span className="text-[11px] text-[#9c90af]">Done</span>
+                                  <button
+                                    type="button"
+                                    disabled={scoringIds.has(u.id)}
+                                    onClick={() => void handleScorePortalUpload(u.id)}
+                                    className="rounded-md bg-[#e6f7ff] px-3 py-1.5 text-[11px] font-semibold text-[#2f6d99] hover:bg-[#d8efff] disabled:opacity-50"
+                                  >
+                                    {scoringIds.has(u.id) ? 'Scoring…' : 'Re-score'}
+                                  </button>
                                 ) : (
                                   <span className="text-[11px] text-[#f4b340]">In progress</span>
                                 )}

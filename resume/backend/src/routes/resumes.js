@@ -354,6 +354,92 @@ router.post("/parse/:uploadId", async (req, res) => {
       throw new Error(`Failed to save parsed resume data: ${parsedDataError.message}`);
     }
 
+    const { data: jobRow, error: jobError } = await supabase
+      .from("resume_jobs")
+      .select("*")
+      .eq("id", uploadRow.job_id)
+      .maybeSingle();
+
+    if (jobError) {
+      throw new Error(`Failed to fetch job for scoring: ${jobError.message}`);
+    }
+
+    if (!jobRow) {
+      throw new Error("Related job not found.");
+    }
+
+    const scoringResult = scoreCandidateAgainstJob({
+      job: jobRow,
+      candidate: candidateRow,
+      parsedData: normalized.parsedData,
+    });
+
+    const { data: scorecardRow, error: scorecardError } = await supabase
+      .from("resume_scorecards")
+      .upsert(
+        [
+          {
+            candidate_id: candidateRow.id,
+            job_id: jobRow.id,
+            ...scoringResult.scorecard,
+          },
+        ],
+        { onConflict: "candidate_id" }
+      )
+      .select()
+      .single();
+
+    if (scorecardError) {
+      throw new Error(`Failed to save scorecard: ${scorecardError.message}`);
+    }
+
+    const { data: updatedCandidate, error: candidateUpdateError } = await supabase
+      .from("resume_candidates")
+      .update({
+        ats_score: scoringResult.totalScore,
+        score_color: scoringResult.scoreColor,
+        is_knocked_out: scoringResult.isKnockedOut,
+        knockout_status: scoringResult.isKnockedOut ? "knocked_out" : "eligible",
+        is_recommended: !scoringResult.isKnockedOut && scoringResult.totalScore >= 75,
+      })
+      .eq("id", candidateRow.id)
+      .select()
+      .single();
+
+    if (candidateUpdateError) {
+      throw new Error(`Failed to update candidate score fields: ${candidateUpdateError.message}`);
+    }
+
+    const { data: allCandidates, error: rankingFetchError } = await supabase
+      .from("resume_candidates")
+      .select("id, ats_score, is_knocked_out")
+      .eq("job_id", jobRow.id);
+
+    if (rankingFetchError) {
+      throw new Error(`Failed to fetch candidates for ranking: ${rankingFetchError.message}`);
+    }
+
+    const rankingUpdates = buildJobRankings(allCandidates || []);
+
+    if (rankingUpdates.length > 0) {
+      for (const row of rankingUpdates) {
+        const { error } = await supabase
+          .from("resume_candidates")
+          .update({ rank_position: row.rank_position })
+          .eq("id", row.id);
+
+        if (error) {
+          throw new Error(`Failed to update rank positions: ${error.message}`);
+        }
+      }
+    }
+
+    await supabase
+      .from("resume_candidates")
+      .update({ rank_position: null })
+      .eq("job_id", jobRow.id)
+      .eq("is_knocked_out", true);
+
     const { error: finalizeError } = await supabase
       .from("resume_uploads")
       .update({ parse_status: "parsed", parse_error: null })
@@ -365,9 +451,10 @@ router.post("/parse/:uploadId", async (req, res) => {
 
     return res.json({
       status: "ok",
-      message: "Resume parsed successfully.",
+      message: "Resume parsed and scored successfully.",
       uploadId: uploadRow.id,
-      candidate: candidateRow,
+      candidate: updatedCandidate,
+      scorecard: scorecardRow,
       parsedPreview: {
         fullName: candidateRow.full_name,
         email: candidateRow.email,
