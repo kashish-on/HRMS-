@@ -96,7 +96,7 @@ const ProtectedRoute = ({ children, allowedRoles }: Props) => {
   if (loading) return <div>Loading...</div>;
 
   if (!session) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/careers" replace />;
   }
 
   if (allowedRoles?.length) {

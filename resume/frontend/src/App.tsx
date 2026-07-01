@@ -213,9 +213,39 @@ function ATSContent() {
 
 export default function App() {
   const currentUser = useCurrentUser();
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const checkAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (isMounted) {
+        setIsAuthenticated(Boolean(session));
+      }
+    };
+
+    checkAuth();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (isMounted) {
+        setIsAuthenticated(Boolean(session));
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
 
   if (window.location.pathname.startsWith('/careers')) {
     return <CareerPortal />;
+  }
+
+  if (isAuthenticated === false) {
+    window.location.assign('/careers');
+    return null;
   }
   
   return (
