@@ -51,7 +51,9 @@ router.get("/jobs", async (req, res) => {
   try {
     const { data, error } = await supabase
       .from("resume_jobs")
-      .select("*")
+      .select(
+        "id,title,job_profile,description,location,min_experience,max_experience,required_skills,optional_skills,created_at"
+      )
       .or("is_open.is.null,is_open.eq.true")  // show jobs where is_open is true OR not set yet
       .order("created_at", { ascending: false });
 
@@ -60,6 +62,7 @@ router.get("/jobs", async (req, res) => {
       return res.status(500).json({ status: "error", message: error.message });
     }
 
+    res.set("Cache-Control", "public, max-age=15, stale-while-revalidate=30");
     return res.json({
       status: "ok",
       jobs: (data || []).map(toPublicJob),
@@ -77,7 +80,9 @@ router.get("/jobs/:id", async (req, res) => {
 
     const { data, error } = await supabase
       .from("resume_jobs")
-      .select("*")
+      .select(
+        "id,title,job_profile,description,location,min_experience,max_experience,required_skills,optional_skills,created_at"
+      )
       .eq("id", id)
       .maybeSingle();
 
@@ -90,6 +95,7 @@ router.get("/jobs/:id", async (req, res) => {
       return res.status(404).json({ status: "error", message: "Job not found." });
     }
 
+    res.set("Cache-Control", "public, max-age=15, stale-while-revalidate=30");
     return res.json({ status: "ok", job: toPublicJob(data) });
   } catch (err) {
     console.error("[careers] unexpected fetch job detail error:", err);
@@ -250,6 +256,12 @@ export default router;
  *
  * -- Optional: index to filter portal uploads quickly
  * CREATE INDEX IF NOT EXISTS idx_resume_uploads_source ON resume_uploads(source);
+ *
+ * -- Optional: add a read-optimized index for the public careers feed
+ * -- This helps the resume_jobs query on is_open + created_at.
+ * CREATE INDEX IF NOT EXISTS idx_resume_jobs_open_true_or_null_created_at
+ *   ON resume_jobs(created_at DESC)
+ *   WHERE is_open IS TRUE OR is_open IS NULL;
  *
  */
 
