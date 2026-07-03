@@ -336,7 +336,7 @@ export default function CareerPortal() {
                 Join the team
               </h1>
               <p className="mt-2 text-[15px] text-[#7d6f93]">
-                We're building the future of HR. Find a role that fits your skills and ambitions.
+                Build the future with us. Find a role that matches your skills, passion, and ambitions.
               </p>
             </div>
 
