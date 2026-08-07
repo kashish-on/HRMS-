@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useATS } from '../../context/ATSContext';
 import type { Candidate } from '../../types';
 import { getInitials, getScoreBg, getStageColor, isTop10 } from '../../lib/utils';
@@ -100,7 +100,10 @@ export default function ResultsScreen() {
   const [scoreFilter, setScoreFilter] = useState('');
   const [stageFilter, setStageFilter] = useState('');
   const [sortBy, setSortBy] = useState('score');
+  const [currentPage, setCurrentPage] = useState(1);
   const [togglingStatus, setTogglingStatus] = useState(false);
+
+  const ITEMS_PER_PAGE = 20;
 
   // Derive directly from context so it stays in sync after dashboard toggles
   const isOpen = currentRecord?.isOpen !== false;
@@ -148,6 +151,23 @@ export default function ResultsScreen() {
 
     return list;
   }, [scoredCandidates, scoreFilter, stageFilter, sortBy]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [scoreFilter, stageFilter, sortBy, filtered.length]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  const paginatedCandidates = filtered.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE
+  );
 
   const highMatch = scoredCandidates.filter((candidate) => (candidate.score ?? 0) >= 75).length;
   const avgScore = scoredCandidates.length
@@ -371,7 +391,7 @@ export default function ResultsScreen() {
                       </tr>
                     </thead>
                     <tbody>
-                      {filtered.map((candidate) => {
+                      {paginatedCandidates.map((candidate) => {
                         const score = candidate.score ?? 0;
                         const isSelected = selectedIds.includes(candidate.id);
                         const top10 = isTop10(candidate, scoredCandidates, getScore);
@@ -476,14 +496,39 @@ export default function ResultsScreen() {
 
                 <div className="flex items-center justify-between px-6 py-4">
                   <div className="text-[12px] text-[#9a8ea9]">
-                    Showing {filtered.length} of {candidates.length} results
+                    Showing {filtered.length === 0 ? 0 : (currentPage - 1) * ITEMS_PER_PAGE + 1} to {Math.min(currentPage * ITEMS_PER_PAGE, filtered.length)} of {filtered.length} results
                   </div>
                   <div className="flex items-center gap-2 text-[12px] text-[#7e7191]">
-                    <button className="h-7 w-7 rounded-full border border-[#ede5f6]">‹</button>
-                    <button className="flex h-7 w-7 items-center justify-center rounded-full bg-[#5f179f] text-white">1</button>
-                    <button className="h-7 w-7 rounded-full border border-[#ede5f6]">2</button>
-                    <button className="h-7 w-7 rounded-full border border-[#ede5f6]">3</button>
-                    <button className="h-7 w-7 rounded-full border border-[#ede5f6]">›</button>
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                      disabled={currentPage === 1}
+                      className="h-7 w-7 rounded-full border border-[#ede5f6] disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      ‹
+                    </button>
+                    {Array.from({ length: totalPages }, (_, index) => index + 1).map((page) => (
+                      <button
+                        key={page}
+                        type="button"
+                        onClick={() => setCurrentPage(page)}
+                        className={`h-7 w-7 rounded-full ${
+                          currentPage === page
+                            ? 'bg-[#5f179f] text-white'
+                            : 'border border-[#ede5f6] text-[#7e7191] hover:bg-[#f6f3fb]'
+                        }`}
+                      >
+                        {page}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                      disabled={currentPage === totalPages}
+                      className="h-7 w-7 rounded-full border border-[#ede5f6] disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      ›
+                    </button>
                   </div>
                 </div>
               </>

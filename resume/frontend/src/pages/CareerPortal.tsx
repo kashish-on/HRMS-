@@ -255,10 +255,23 @@ export default function CareerPortal() {
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 20;
+
+  const paginatedJobs = jobs.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE
+  );
+
+  const totalPages = Math.max(1, Math.ceil(jobs.length / ITEMS_PER_PAGE));
 
   useEffect(() => {
     document.title = "ObserveNow Careers";
   }, []);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [jobs]);
 
   // ── Fetch all jobs ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -371,15 +384,52 @@ export default function CareerPortal() {
             )}
 
             {!loading && !fetchError && jobs.length > 0 && (
-              <div className="grid gap-4 sm:grid-cols-2">
-                {jobs.map((job) => (
-                  <JobCard
-                    key={job.id}
-                    job={job}
-                    onOpen={() => { setSelectedJob(job); setScreen("detail"); }}
-                  />
-                ))}
-              </div>
+              <>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {paginatedJobs.map((job) => (
+                    <JobCard
+                      key={job.id}
+                      job={job}
+                      onOpen={() => { setSelectedJob(job); setScreen("detail"); }}
+                    />
+                  ))}
+                </div>
+
+                {totalPages > 1 && (
+                  <div className="mt-8 flex flex-wrap items-center justify-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                      disabled={currentPage === 1}
+                      className="rounded-full border border-[#ede5f6] bg-white px-3 py-2 text-sm text-[#7e7191] disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Previous
+                    </button>
+                    {Array.from({ length: totalPages }, (_, index) => index + 1).map((page) => (
+                      <button
+                        key={page}
+                        type="button"
+                        onClick={() => setCurrentPage(page)}
+                        className={`min-w-[38px] rounded-full px-3 py-2 text-sm ${
+                          currentPage === page
+                            ? 'bg-[#5f179f] text-white'
+                            : 'border border-[#ede5f6] text-[#7e7191] hover:bg-[#f6f3fb]'
+                        }`}
+                      >
+                        {page}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                      disabled={currentPage === totalPages}
+                      className="rounded-full border border-[#ede5f6] bg-white px-3 py-2 text-sm text-[#7e7191] disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Next
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </>
         )}
