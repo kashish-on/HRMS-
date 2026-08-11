@@ -194,6 +194,69 @@ router.get("/:id", async (req, res) => {
   }
 });
 
+router.patch("/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      title,
+      job_profile,
+      location,
+      min_experience,
+      max_experience,
+      description,
+      required_skills,
+      optional_skills,
+    } = req.body;
+
+    const updates = {};
+    if (title !== undefined) updates.title = String(title).trim();
+    if (job_profile !== undefined) updates.job_profile = String(job_profile).trim();
+    if (location !== undefined) updates.location = location?.trim() || null;
+    if (min_experience !== undefined) updates.min_experience = Number(min_experience) || 0;
+    if (max_experience !== undefined) updates.max_experience = max_experience !== null ? Number(max_experience) : null;
+    if (description !== undefined) updates.description = description?.trim() || null;
+    if (required_skills !== undefined) {
+      updates.required_skills = Array.isArray(required_skills)
+        ? required_skills.map((skill) => String(skill).trim()).filter(Boolean)
+        : [];
+    }
+    if (optional_skills !== undefined) {
+      updates.optional_skills = Array.isArray(optional_skills)
+        ? optional_skills.map((skill) => String(skill).trim()).filter(Boolean)
+        : [];
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ status: "error", message: "No valid fields to update." });
+    }
+
+    const { data, error } = await supabase
+      .from("resume_jobs")
+      .update(updates)
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("[jobs] update job error:", error);
+      return res.status(500).json({ status: "error", message: error.message });
+    }
+
+    if (!data) {
+      return res.status(404).json({ status: "error", message: "Job not found." });
+    }
+
+    return res.json({
+      status: "ok",
+      message: "Job updated successfully.",
+      job: data,
+    });
+  } catch (err) {
+    console.error("[jobs] unexpected update job error:", err);
+    return res.status(500).json({ status: "error", message: err?.message || "Failed to update job." });
+  }
+});
+
 router.get("/:id/candidates", async (req, res) => {
   try {
     const { id } = req.params;
@@ -566,6 +629,114 @@ router.patch("/:id/status", async (req, res) => {
   } catch (err) {
     console.error("[jobs] unexpected toggle status error:", err);
     return res.status(500).json({ status: "error", message: err?.message || "Failed to update job status." });
+  }
+});
+
+router.delete("/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { data: jobRow, error: jobLookupError } = await supabase
+      .from("resume_jobs")
+      .select("id")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (jobLookupError) {
+      console.error("[jobs] delete lookup error:", jobLookupError);
+      return res.status(500).json({ status: "error", message: jobLookupError.message });
+    }
+
+    if (!jobRow) {
+      return res.status(404).json({ status: "error", message: "Job not found." });
+    }
+
+    const { data: candidates, error: candidatesError } = await supabase
+      .from("resume_candidates")
+      .select("id, upload_id")
+      .eq("job_id", id);
+
+    if (candidatesError) {
+      console.error("[jobs] fetch candidates for delete error:", candidatesError);
+      return res.status(500).json({ status: "error", message: candidatesError.message });
+    }
+
+    const candidateIds = (candidates || []).map((candidate) => candidate.id).filter(Boolean);
+    const uploadIds = (candidates || [])
+      .map((candidate) => candidate.upload_id)
+      .filter(Boolean);
+
+    const { data: uploads, error: uploadsError } = await supabase
+      .from("resume_uploads")
+      .select("id")
+      .eq("job_id", id);
+
+    if (uploadsError) {
+      console.error("[jobs] fetch uploads for delete error:", uploadsError);
+      return res.status(500).json({ status: "error", message: uploadsError.message });
+    }
+
+    const uploadIdsFromUploads = (uploads || []).map((upload) => upload.id).filter(Boolean);
+    const allUploadIds = [...new Set([...uploadIds, ...uploadIdsFromUploads])];
+
+    if (candidateIds.length) {
+      const deleteResults = await Promise.all([
+        supabase.from("resume_candidate_notes").delete().in("candidate_id", candidateIds),
+        supabase.from("resume_candidate_interviews").delete().in("candidate_id", candidateIds),
+        supabase.from("resume_candidate_offers").delete().in("candidate_id", candidateIds),
+        supabase.from("resume_scorecards").delete().in("candidate_id", candidateIds),
+        supabase.from("resume_candidates").delete().in("id", candidateIds),
+      ]);
+
+      const firstDeleteError = deleteResults.find((result) => result.error)?.error;
+      if (firstDeleteError) {
+        console.error("[jobs] delete candidate related rows error:", firstDeleteError);
+        return res.status(500).json({ status: "error", message: firstDeleteError.message });
+      }
+    }
+
+    if (allUploadIds.length) {
+      const { error: parsedDeleteError } = await supabase
+        .from("resume_parsed_data")
+        .delete()
+        .in("upload_id", allUploadIds);
+
+      if (parsedDeleteError) {
+        console.error("[jobs] delete parsed data error:", parsedDeleteError);
+        return res.status(500).json({ status: "error", message: parsedDeleteError.message });
+      }
+    }
+
+    if (uploadIdsFromUploads.length) {
+      const { error: uploadDeleteError } = await supabase
+        .from("resume_uploads")
+        .delete()
+        .in("id", uploadIdsFromUploads);
+
+      if (uploadDeleteError) {
+        console.error("[jobs] delete upload rows error:", uploadDeleteError);
+        return res.status(500).json({ status: "error", message: uploadDeleteError.message });
+      }
+    }
+
+    const { error: jobDeleteError } = await supabase
+      .from("resume_jobs")
+      .delete()
+      .eq("id", id);
+
+    if (jobDeleteError) {
+      console.error("[jobs] delete job row error:", jobDeleteError);
+      return res.status(500).json({ status: "error", message: jobDeleteError.message });
+    }
+
+    return res.json({
+      status: "ok",
+      message: "Job deleted successfully.",
+      jobId: id,
+    });
+  } catch (err) {
+    console.error("[jobs] unexpected delete error:", err);
+    return res.status(500).json({ status: "error", message: err?.message || "Failed to delete job." });
   }
 });
 

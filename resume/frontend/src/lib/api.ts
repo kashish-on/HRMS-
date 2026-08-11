@@ -16,7 +16,6 @@ const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001/ap
 // using requestPublic() below.
 
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  // Retrieve the current session token
   const { data: { session } } = await supabase.auth.getSession();
   const token = session?.access_token;
 
@@ -27,18 +26,26 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     ...init,
     headers: {
+      Accept: 'application/json',
       ...(init?.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
-      // ✅ JWT attached — backend must verify this on every protected route
       Authorization: `Bearer ${token}`,
       ...(init?.headers || {}),
     },
   });
 
   const text = await response.text();
-  const payload = text ? JSON.parse(text) : null;
+  let payload: any = null;
+
+  if (text) {
+    try {
+      payload = JSON.parse(text);
+    } catch (error) {
+      throw new Error(`Unexpected server response: ${text.slice(0, 300)}`);
+    }
+  }
 
   if (!response.ok) {
-    throw new Error(payload?.message || payload?.error || 'Request failed');
+    throw new Error(payload?.message || payload?.error || `Request failed: ${response.statusText}`);
   }
 
   return payload as T;
@@ -51,16 +58,25 @@ async function requestPublic<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     ...init,
     headers: {
+      Accept: 'application/json',
       ...(init?.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
       ...(init?.headers || {}),
     },
   });
 
   const text = await response.text();
-  const payload = text ? JSON.parse(text) : null;
+  let payload: any = null;
+
+  if (text) {
+    try {
+      payload = JSON.parse(text);
+    } catch (error) {
+      throw new Error(`Unexpected server response: ${text.slice(0, 300)}`);
+    }
+  }
 
   if (!response.ok) {
-    throw new Error(payload?.message || payload?.error || 'Request failed');
+    throw new Error(payload?.message || payload?.error || `Request failed: ${response.statusText}`);
   }
 
   return payload as T;
@@ -108,6 +124,22 @@ export async function fetchCandidatesForJob(jobId: string): Promise<Candidate[]>
 export async function fetchCandidateDetail(candidateId: string): Promise<Candidate> {
   const payload = await request<{ candidate: Candidate }>(`/candidates/${candidateId}`);
   return payload.candidate;
+}
+
+export interface JobDetail {
+  id: string;
+  title: string;
+  job_profile: string;
+  location: string | null;
+  min_experience?: number;
+  max_experience?: number | null;
+  description: string | null;
+  required_skills?: string[];
+  optional_skills?: string[];
+}
+
+export async function fetchJob(jobId: string): Promise<{ job: JobDetail }> {
+  return request<{ job: JobDetail }>(`/jobs/${jobId}`);
 }
 
 export async function runParseFlow(input: ParseRunInput): Promise<ParseRunResponse> {
@@ -247,6 +279,17 @@ export async function toggleJobStatus(jobId: string, isOpen: boolean): Promise<v
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ is_open: isOpen }),
+  });
+}
+export async function updateJob(jobId: string, updates: { title?: string; job_profile?: string; location?: string | null; min_experience?: number; max_experience?: number | null; description?: string | null; required_skills?: string[]; optional_skills?: string[]; }): Promise<{ job: { id: string; title: string; job_profile: string; description: string | null } }> {
+  return request<{ job: { id: string; title: string; job_profile: string; description: string | null } }>(`/jobs/${jobId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(updates),
+  });
+}
+export async function deleteJob(jobId: string): Promise<void> {
+  await request<{ status: string }>(`/jobs/${jobId}`, {
+    method: 'DELETE',
   });
 }
 

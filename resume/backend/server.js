@@ -233,6 +233,22 @@ app.get("/api/db-check", async (req, res) => {
   }
 });
 
+app.use('/api', (req, res) => {
+  res.status(404).json({ status: 'error', message: 'API route not found.' });
+});
+
+app.use((err, req, res, next) => {
+  console.error('Unhandled backend error:', err);
+
+  if (res.headersSent) {
+    return next(err);
+  }
+
+  res.status(500).json({
+    error: err?.message || 'Internal server error.',
+  });
+});
+
 // ── Global error handler ──────────────────────────────────────────────────────
 
 app.use((err, req, res, next) => {

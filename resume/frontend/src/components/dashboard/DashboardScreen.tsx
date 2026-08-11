@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
-import { request, toggleJobStatus } from '../../lib/api';
+import { deleteJob, fetchJob, request, toggleJobStatus, updateJob } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
 import { useATS } from '../../context/ATSContext';
 import type { ParseRecord } from '../../types';
@@ -116,6 +116,7 @@ export default function DashboardScreen() {
     startParsing,
     isParsing,
     updateRecordLocally,
+    refreshRecords,
   } = useATS();
 
   // ── Parse-resumes tab state ───────────────────────────────────────────────
@@ -129,6 +130,7 @@ export default function DashboardScreen() {
   // ── Upload-from-portal tab state ─────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<'parse' | 'portal'>('parse');
   const [togglingJobId, setTogglingJobId] = useState<string | null>(null);
+  const [deletingJobId, setDeletingJobId] = useState<string | null>(null);
 
   const handleToggleJobStatus = async (e: React.MouseEvent, record: ParseRecord) => {
     e.stopPropagation();
@@ -144,6 +146,155 @@ export default function DashboardScreen() {
       setTogglingJobId(null);
     }
   };
+
+  const handleDeleteJob = async (e: React.MouseEvent, record: ParseRecord) => {
+    e.stopPropagation();
+
+    const confirmed = window.confirm(`Delete job "${record.role}" and all related portal applications?`);
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingJobId(record.id);
+    setPortalError(null);
+    try {
+      await deleteJob(record.id);
+      setPortalJobs((prev) => prev.filter((job) => job.id !== record.id));
+      if (selectedJobId === record.id) {
+        setSelectedJobId('');
+        setPortalUploads([]);
+      }
+      setPortalSuccess(`Job "${record.role}" deleted.`);
+      await refreshRecords();
+    } catch (err: unknown) {
+      setPortalError(err instanceof Error ? err.message : 'Failed to delete job.');
+    } finally {
+      setDeletingJobId(null);
+    }
+  };
+
+  const [showEditJob, setShowEditJob] = useState(false);
+  const [editingJobId, setEditingJobId] = useState<string>('');
+  const [editingJobTitle, setEditingJobTitle] = useState('');
+  const [editingJobProfile, setEditingJobProfile] = useState('');
+  const [editingJobLocation, setEditingJobLocation] = useState('');
+  const [editingJobMinExp, setEditingJobMinExp] = useState('');
+  const [editingJobMaxExp, setEditingJobMaxExp] = useState('');
+  const [editingJobDescription, setEditingJobDescription] = useState('');
+  const [editingJobReqSkills, setEditingJobReqSkills] = useState('');
+  const [editingJobOptSkills, setEditingJobOptSkills] = useState('');
+  const [savingJob, setSavingJob] = useState(false);
+  const [editJobError, setEditJobError] = useState<string | null>(null);
+
+  const loadEditJobData = (job: { id: string; title: string; job_profile: string; location: string | null; min_experience?: number; max_experience?: number | null; description: string | null; required_skills?: string[]; optional_skills?: string[]; }) => {
+    setEditingJobId(job.id);
+    setEditingJobTitle(job.title || '');
+    setEditingJobProfile(job.job_profile || '');
+    setEditingJobLocation(job.location || '');
+    setEditingJobMinExp(job.min_experience?.toString() || '');
+    setEditingJobMaxExp(job.max_experience?.toString() || '');
+    setEditingJobDescription(job.description || '');
+    setEditingJobReqSkills((job.required_skills || []).join(', '));
+    setEditingJobOptSkills((job.optional_skills || []).join(', '));
+  };
+
+  const openEditJob = async (event: React.MouseEvent, record: ParseRecord) => {
+    event.stopPropagation();
+    setEditJobError(null);
+    setSavingJob(false);
+    try {
+      const data = await fetchJob(record.id);
+      loadEditJobData(data.job);
+      setShowEditJob(true);
+    } catch (err: unknown) {
+      setPortalError(err instanceof Error ? err.message : 'Failed to load job details.');
+    }
+  };
+
+  const saveJobEdit = async () => {
+    if (!editingJobId) {
+      return;
+    }
+
+    setSavingJob(true);
+    setEditJobError(null);
+    try {
+      const response = await updateJob(editingJobId, {
+        title: editingJobTitle.trim(),
+        job_profile: editingJobProfile.trim(),
+        location: editingJobLocation.trim() || null,
+        min_experience: editingJobMinExp ? Number(editingJobMinExp) : 0,
+        max_experience: editingJobMaxExp ? Number(editingJobMaxExp) : null,
+        description: editingJobDescription.trim() || null,
+        required_skills: editingJobReqSkills.split(',').map((s) => s.trim()).filter(Boolean),
+        optional_skills: editingJobOptSkills.split(',').map((s) => s.trim()).filter(Boolean),
+      });
+      setShowEditJob(false);
+      setPortalSuccess(`Job "${response.job.title}" updated successfully.`);
+      await refreshRecords();
+      setPortalJobs((prev) =>
+        prev.map((job) =>
+          job.id === response.job.id
+            ? { ...job, title: response.job.title, job_profile: response.job.job_profile }
+            : job
+        )
+      );
+      if (selectedJobId === response.job.id) {
+        await fetchPortalUploads(response.job.id);
+      }
+    } catch (err: unknown) {
+      setEditJobError(err instanceof Error ? err.message : 'Failed to save job.');
+    } finally {
+      setSavingJob(false);
+    }
+  };
+
+  const openEditSelectedJob = async (event: React.MouseEvent) => {
+    event.stopPropagation();
+    if (!selectedJobId) {
+      return;
+    }
+
+    setEditJobError(null);
+    setSavingJob(false);
+    try {
+      const data = await fetchJob(selectedJobId);
+      loadEditJobData(data.job);
+      setShowEditJob(true);
+    } catch (err: unknown) {
+      setPortalError(err instanceof Error ? err.message : 'Failed to load job details.');
+    }
+  };
+
+  const handleDeletePortalJob = async (jobId: string) => {
+    const job = portalJobs.find((item) => item.id === jobId);
+    if (!job) {
+      return;
+    }
+
+    const confirmed = window.confirm(`Delete job "${job.title}" and all related portal applications?`);
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingJobId(job.id);
+    setPortalError(null);
+    try {
+      await deleteJob(job.id);
+      setPortalJobs((prev) => prev.filter((item) => item.id !== job.id));
+      if (selectedJobId === job.id) {
+        setSelectedJobId('');
+        setPortalUploads([]);
+      }
+      setPortalSuccess(`Job "${job.title}" deleted.`);
+      await refreshRecords();
+    } catch (err: unknown) {
+      setPortalError(err instanceof Error ? err.message : 'Failed to delete job.');
+    } finally {
+      setDeletingJobId(null);
+    }
+  };
+
   const [portalJobs, setPortalJobs] = useState<JobOption[]>([]);
   const [selectedJobId, setSelectedJobId] = useState<string>('');
   const [portalUploads, setPortalUploads] = useState<PortalUpload[]>([]);
@@ -562,6 +713,35 @@ export default function DashboardScreen() {
                       <path d="M1 1L6 6L11 1" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
                     </svg>
                   </div>
+                  {selectedJobId && (
+                    <button
+                      type="button"
+                      onClick={(event) => openEditSelectedJob(event)}
+                      className="flex h-10 items-center gap-1.5 rounded-lg border border-[#d7d0ed] bg-[#f7f5ff] px-3.5 text-[12px] font-semibold text-[#4f3c8a] hover:bg-[#ede8ff] whitespace-nowrap"
+                    >
+                      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7">
+                        <path d="M3 11.2V13h1.8l7.1-7.1-1.8-1.8L3 11.2z" />
+                        <path d="M11.5 4.5l1.8 1.8" />
+                      </svg>
+                      Edit
+                    </button>
+                  )}
+                  {selectedJobId && (
+                    <button
+                      type="button"
+                      onClick={() => void handleDeletePortalJob(selectedJobId)}
+                      disabled={deletingJobId === selectedJobId}
+                      className="flex h-10 items-center gap-1.5 rounded-lg border border-[#efcfcf] bg-[#fff7f7] px-3.5 text-[12px] font-semibold text-[#c64949] hover:bg-[#ffeaea] whitespace-nowrap disabled:opacity-50"
+                    >
+                      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7">
+                        <path d="M3 4h10" />
+                        <path d="M5.5 4V2.8a.8.8 0 0 1 .8-.8h3.4a.8.8 0 0 1 .8.8V4" />
+                        <path d="M4.5 6.5h7" />
+                        <path d="M5.8 6.5l.5 6.5h3.4l.5-6.5" />
+                      </svg>
+                      {deletingJobId === selectedJobId ? 'Deleting…' : 'Delete'}
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => { setShowCreateJob(true); setCreateJobError(null); }}
@@ -741,6 +921,166 @@ export default function DashboardScreen() {
                           className="h-9 rounded-lg bg-[#6f2dbd] px-5 text-[12px] font-semibold text-white hover:bg-[#5c22a4] disabled:opacity-60"
                         >
                           {creatingJob ? 'Creating…' : 'Create Job'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {showEditJob && (
+                  <div className="fixed inset-0 z-[210] flex items-center justify-center bg-black/30 px-4">
+                    <div className="w-full max-w-lg rounded-[20px] border border-[#ede7f4] bg-white shadow-[0_20px_60px_rgba(111,45,189,0.18)]">
+                      <div className="flex items-center justify-between border-b border-[#f0ebf6] px-6 py-4">
+                        <div>
+                          <h2 className="text-[16px] font-semibold text-[#1f1830]">Edit job</h2>
+                          <p className="text-[12px] text-[#9c90af]">Updates will apply to the public careers portal immediately.</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setShowEditJob(false)}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg text-[#9c90af] hover:bg-[#f6f1fc] hover:text-[#6f2dbd]"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M3 3l10 10M13 3L3 13" />
+                          </svg>
+                        </button>
+                      </div>
+                      <div className="max-h-[70vh] overflow-y-auto px-6 py-5 space-y-4">
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="mb-1.5 block text-[12px] font-medium text-[#4a3c60]">
+                              Job Title <span className="text-red-500">*</span>
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="e.g. UI/UX Designer"
+                              value={editingJobTitle}
+                              onChange={(e) => setEditingJobTitle(e.target.value)}
+                              className="h-9 w-full rounded-lg border border-[#e5deef] bg-[#fbfafe] px-3 text-[13px] text-[#1f1830] outline-none placeholder:text-[#c1b6cf] focus:border-[#b48de2]"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1.5 block text-[12px] font-medium text-[#4a3c60]">
+                              Job Profile <span className="text-red-500">*</span>
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="e.g. Product Design"
+                              value={editingJobProfile}
+                              onChange={(e) => setEditingJobProfile(e.target.value)}
+                              className="h-9 w-full rounded-lg border border-[#e5deef] bg-[#fbfafe] px-3 text-[13px] text-[#1f1830] outline-none placeholder:text-[#c1b6cf] focus:border-[#b48de2]"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-3">
+                          <div>
+                            <label className="mb-1.5 block text-[12px] font-medium text-[#4a3c60]">Location</label>
+                            <input
+                              type="text"
+                              placeholder="e.g. Noida, India"
+                              value={editingJobLocation}
+                              onChange={(e) => setEditingJobLocation(e.target.value)}
+                              className="h-9 w-full rounded-lg border border-[#e5deef] bg-[#fbfafe] px-3 text-[13px] text-[#1f1830] outline-none placeholder:text-[#c1b6cf] focus:border-[#b48de2]"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1.5 block text-[12px] font-medium text-[#4a3c60]">Min Exp (yrs)</label>
+                            <input
+                              type="number"
+                              min="0"
+                              placeholder="0"
+                              value={editingJobMinExp}
+                              onChange={(e) => setEditingJobMinExp(e.target.value)}
+                              className="h-9 w-full rounded-lg border border-[#e5deef] bg-[#fbfafe] px-3 text-[13px] text-[#1f1830] outline-none focus:border-[#b48de2]"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1.5 block text-[12px] font-medium text-[#4a3c60]">Max Exp (yrs)</label>
+                            <input
+                              type="number"
+                              min="0"
+                              placeholder="No limit"
+                              value={editingJobMaxExp}
+                              onChange={(e) => setEditingJobMaxExp(e.target.value)}
+                              className="h-9 w-full rounded-lg border border-[#e5deef] bg-[#fbfafe] px-3 text-[13px] text-[#1f1830] outline-none focus:border-[#b48de2]"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="mb-1.5 block text-[12px] font-medium text-[#4a3c60]">Description</label>
+                          <textarea
+                            rows={4}
+                            value={editingJobDescription}
+                            onChange={(e) => setEditingJobDescription(e.target.value)}
+                            className="w-full rounded-lg border border-[#e5deef] bg-[#fbfafe] px-3 py-2.5 text-[13px] text-[#1f1830] outline-none placeholder:text-[#c1b6cf] focus:border-[#b48de2] resize-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="mb-1.5 block text-[12px] font-medium text-[#4a3c60]">
+                            Required Skills
+                            <span className="ml-1.5 font-normal text-[#a89ec0]">comma-separated</span>
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="e.g. React, TypeScript, Figma"
+                            value={editingJobReqSkills}
+                            onChange={(e) => setEditingJobReqSkills(e.target.value)}
+                            className="h-9 w-full rounded-lg border border-[#e5deef] bg-[#fbfafe] px-3 text-[13px] text-[#1f1830] outline-none placeholder:text-[#c1b6cf] focus:border-[#b48de2]"
+                          />
+                          {editingJobReqSkills.trim() && (
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              {editingJobReqSkills.split(',').map((s) => s.trim()).filter(Boolean).map((s, i) => (
+                                <span key={i} className="rounded-full bg-[#f0e6ff] px-2.5 py-0.5 text-[11px] font-medium text-[#6f2dbd]">{s}</span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <div>
+                          <label className="mb-1.5 block text-[12px] font-medium text-[#4a3c60]">
+                            Good to Have
+                            <span className="ml-1.5 font-normal text-[#a89ec0]">comma-separated</span>
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Framer, Motion Design"
+                            value={editingJobOptSkills}
+                            onChange={(e) => setEditingJobOptSkills(e.target.value)}
+                            className="h-9 w-full rounded-lg border border-[#e5deef] bg-[#fbfafe] px-3 text-[13px] text-[#1f1830] outline-none placeholder:text-[#c1b6cf] focus:border-[#b48de2]"
+                          />
+                          {editingJobOptSkills.trim() && (
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              {editingJobOptSkills.split(',').map((s) => s.trim()).filter(Boolean).map((s, i) => (
+                                <span key={i} className="rounded-full bg-[#f0f4ff] px-2.5 py-0.5 text-[11px] font-medium text-[#4060c8]">{s}</span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {editJobError && (
+                          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-[12px] text-red-700">
+                            {editJobError}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center justify-end gap-2.5 border-t border-[#f0ebf6] px-6 py-4">
+                        <button
+                          type="button"
+                          onClick={() => setShowEditJob(false)}
+                          className="h-9 rounded-lg border border-[#e5deef] px-4 text-[12px] font-medium text-[#7d6f93] hover:bg-[#f8f3ff]"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void saveJobEdit()}
+                          disabled={savingJob}
+                          className="h-9 rounded-lg bg-[#6f2dbd] px-5 text-[12px] font-semibold text-white hover:bg-[#5c22a4] disabled:opacity-60"
+                        >
+                          {savingJob ? 'Saving…' : 'Save changes'}
                         </button>
                       </div>
                     </div>
@@ -953,14 +1293,37 @@ export default function DashboardScreen() {
                               <circle cx="8" cy="8" r="1.8" />
                             </svg>
                           </button>
-                          <button className="hover:text-[#6f2dbd]">
+                          <button
+                            type="button"
+                            onClick={(event) => openEditJob(event, record)}
+                            className="hover:text-[#6f2dbd]"
+                            title="Edit job description"
+                          >
                             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-                              <path d="M3 11.8l.4-2.4L10.9 2l2.1 2.1-7.4 7.4-2.6.3z" />
-                              <path d="M9.8 3.1l2.1 2.1" />
+                              <path d="M3 11.2V13h1.8l7.1-7.1-1.8-1.8L3 11.2z" />
+                              <path d="M11.5 4.5l1.8 1.8" />
                             </svg>
-                            </button>
-                          </div>
-                        </td>
+                          </button>
+                          <button
+                            type="button"
+                            disabled={deletingJobId === record.id}
+                            onClick={(event) => void handleDeleteJob(event, record)}
+                            className="text-[#cb5b5b] hover:text-[#a43a3a] disabled:opacity-50"
+                            title="Delete job"
+                          >
+                            {deletingJobId === record.id ? (
+                              <span className="text-[11px] font-semibold">Deleting...</span>
+                            ) : (
+                              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                                <path d="M3 4h10" />
+                                <path d="M5.5 4V2.8a.8.8 0 0 1 .8-.8h3.4a.8.8 0 0 1 .8.8V4" />
+                                <path d="M4.5 6.5h7" />
+                                <path d="M5.8 6.5l.5 6.5h3.4l.5-6.5" />
+                              </svg>
+                            )}
+                          </button>
+                        </div>
+                      </td>
                       </tr>
                     ))}
                   </tbody>
