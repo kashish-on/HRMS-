@@ -218,7 +218,7 @@ export default function App() {
 
   useEffect(() => {
     const favicon = document.querySelector("link[rel='icon']") as HTMLLinkElement | null;
-    const nextHref = isCareersRoute ? '/on_logo.png' : '/observenow_hrms.png';
+    const nextHref = isCareersRoute ? '/on-logo.png' : '/observenow_hrms.png';
 
     if (favicon) {
       favicon.href = nextHref;
