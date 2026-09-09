@@ -214,6 +214,24 @@ function ATSContent() {
 export default function App() {
   const currentUser = useCurrentUser();
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const isCareersRoute = window.location.pathname.startsWith('/careers');
+
+  useEffect(() => {
+    const favicon = document.querySelector("link[rel='icon']") as HTMLLinkElement | null;
+    const nextHref = isCareersRoute ? '/on_logo.png' : '/observenow_hrms.png';
+
+    if (favicon) {
+      favicon.href = nextHref;
+    } else {
+      const link = document.createElement('link');
+      link.rel = 'icon';
+      link.type = 'image/png';
+      link.href = nextHref;
+      document.head.appendChild(link);
+    }
+
+    document.title = isCareersRoute ? 'ObserveNow Careers' : 'ObserveNow HRMS';
+  }, [isCareersRoute]);
 
   useEffect(() => {
     let isMounted = true;
