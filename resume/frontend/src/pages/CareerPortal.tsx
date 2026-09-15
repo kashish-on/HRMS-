@@ -326,13 +326,18 @@ export default function CareerPortal() {
     <div className="min-h-screen bg-[#f8f6fb]">
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <header className="sticky top-0 z-30 border-b border-[#ede7f4] bg-white/90 backdrop-blur-sm">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
+        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-6 py-4">
           <button
             type="button"
             onClick={() => setScreen("list")}
-            className="text-[17px] font-semibold text-[#1f1830] hover:text-[#6f2dbd] transition-colors"
+            className="flex items-center gap-3 text-left transition-colors hover:text-[#6f2dbd]"
           >
-            ObserveNow — Careers
+            <img
+              src="/ObserveNow-logo.png"
+              alt="ObserveNow logo"
+              className="h-10 w-auto object-contain"
+            />
+            <span className="text-[17px] font-semibold text-[#1f1830]">ObserveNow Careers</span>
           </button>
           <span className="rounded-full bg-[#f0e6ff] px-3 py-1 text-[12px] font-semibold text-[#6f2dbd]">
             {jobs.length} open {jobs.length === 1 ? "role" : "roles"}
