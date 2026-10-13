@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { ChangeEvent } from 'react';
+import type { ChangeEvent, DragEvent } from 'react';
 import { deleteJob, fetchJob, request, toggleJobStatus, updateJob } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
 import { useATS } from '../../context/ATSContext';
@@ -110,6 +110,7 @@ const statStyles = [
 export default function DashboardScreen() {
   const {
     records,
+    dashboardStats,
     recordsLoading,
     setCurrentRecord,
     navigate,
@@ -125,10 +126,13 @@ export default function DashboardScreen() {
   const [location, setLocation] = useState('');
   const [skills, setSkills] = useState('');
   const [files, setFiles] = useState<File[]>([]);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [isDraggingFiles, setIsDraggingFiles] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // ── Upload-from-portal tab state ─────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<'parse' | 'portal'>('parse');
+  const [hiringTab, setHiringTab] = useState<'open' | 'closed'>('open');
   const [togglingJobId, setTogglingJobId] = useState<string | null>(null);
   const [deletingJobId, setDeletingJobId] = useState<string | null>(null);
 
@@ -296,6 +300,7 @@ export default function DashboardScreen() {
   };
 
   const [portalJobs, setPortalJobs] = useState<JobOption[]>([]);
+  const portalJobsRequested = useRef(false);
   const [selectedJobId, setSelectedJobId] = useState<string>('');
   const [portalUploads, setPortalUploads] = useState<PortalUpload[]>([]);
   const [portalLoading, setPortalLoading] = useState(false);
@@ -359,38 +364,29 @@ export default function DashboardScreen() {
     }
   };
 
-  // Fetch jobs once for the job selector
+  // Load lightweight job options only when the portal tab is first opened.
   useEffect(() => {
-    let mounted = true;
+    if (activeTab !== 'portal' || portalJobsRequested.current) return;
+    portalJobsRequested.current = true;
 
     const loadJobs = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) {
+          portalJobsRequested.current = false;
           return;
         }
 
-        const data = await request<{ jobs?: JobOption[] }>('/jobs');
-        if (!mounted) return;
+        const data = await request<{ jobs?: JobOption[] }>('/jobs/options');
         setPortalJobs((data.jobs || []).map((j) => ({ id: j.id, title: j.title, job_profile: j.job_profile })));
       } catch (error) {
+        portalJobsRequested.current = false;
         console.error('Failed to load portal jobs', error);
       }
     };
 
-    loadJobs();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-        loadJobs();
-      }
-    });
-
-    return () => {
-      mounted = false;
-      subscription.unsubscribe();
-    };
-  }, []);
+    void loadJobs();
+  }, [activeTab]);
 
   // Fetch portal uploads whenever selected job changes
   const fetchPortalUploads = useCallback(async (jobId: string) => {
@@ -471,23 +467,18 @@ export default function DashboardScreen() {
     setPortalSuccess(`Parsed ${pending.length} resume${pending.length > 1 ? 's' : ''} from portal.`);
   };
 
-  const totalResumes = records.reduce((sum, record) => sum + record.totalResumes, 0);
-  const totalHigh = records.reduce((sum, record) => sum + record.highMatch, 0);
-  const avgScore = records.length
-    ? Math.round(records.reduce((sum, record) => sum + record.avgScore, 0) / records.length)
-    : 0;
-  const shortlistedCount = Math.max(totalHigh, records.reduce((sum, record) => sum + Math.round(record.highMatch * 0.6), 0));
-  const interviewCount = records.reduce((sum, record) => sum + (record.status === 'Processing' ? 1 : 0), 0) + Math.max(0, Math.round(totalHigh * 0.15));
-  const rejectedCount = Math.max(0, totalResumes - totalHigh - shortlistedCount + interviewCount);
-
   const stats = [
-    { value: totalResumes, suffix: '', ...statStyles[0] },
-    { value: totalHigh, suffix: '', ...statStyles[1] },
-    { value: avgScore, suffix: '', ...statStyles[2] },
-    { value: shortlistedCount, suffix: '', ...statStyles[3] },
-    { value: interviewCount, suffix: '', ...statStyles[4] },
-    { value: rejectedCount, suffix: '', ...statStyles[5] },
+    { value: dashboardStats?.totalResumes ?? '—', suffix: '', ...statStyles[0] },
+    { value: dashboardStats?.highMatch ?? '—', suffix: '', ...statStyles[1] },
+    { value: dashboardStats?.avgScore ?? '—', suffix: '', ...statStyles[2] },
+    { value: dashboardStats?.shortlistedCount ?? '—', suffix: '', ...statStyles[3] },
+    { value: dashboardStats?.interviewCount ?? '—', suffix: '', ...statStyles[4] },
+    { value: dashboardStats?.rejectedCount ?? '—', suffix: '', ...statStyles[5] },
   ];
+
+  const hiringRecords = records.filter((record) =>
+    hiringTab === 'open' ? record.isOpen !== false : record.isOpen === false
+  );
 
   function handleOpenRecord(record: ParseRecord) {
     setCurrentRecord(record);
@@ -504,8 +495,44 @@ export default function DashboardScreen() {
     });
   }
 
+  function addResumeFiles(incomingFiles: File[]) {
+    const acceptedFiles = incomingFiles.filter((file) =>
+      /\.(pdf|doc|docx)$/i.test(file.name)
+    );
+    const invalidCount = incomingFiles.length - acceptedFiles.length;
+    const mergedFiles = [...files];
+    const existingFileKeys = new Set(files.map((file) => `${file.name}:${file.size}:${file.lastModified}`));
+
+    for (const file of acceptedFiles) {
+      const fileKey = `${file.name}:${file.size}:${file.lastModified}`;
+      if (!existingFileKeys.has(fileKey)) {
+        existingFileKeys.add(fileKey);
+        mergedFiles.push(file);
+      }
+    }
+
+    if (mergedFiles.length > 25) {
+      setUploadError('You can upload up to 25 resumes per batch.');
+      setFiles(mergedFiles.slice(0, 25));
+    } else if (invalidCount > 0) {
+      setUploadError('Only PDF, DOC, and DOCX files are supported.');
+      setFiles(mergedFiles);
+    } else {
+      setUploadError(null);
+      setFiles(mergedFiles);
+    }
+  }
+
   function handleFilesSelected(event: ChangeEvent<HTMLInputElement>) {
-    setFiles(Array.from(event.target.files || []));
+    addResumeFiles(Array.from(event.target.files || []));
+    // Allow selecting the same files again after removing them from the list.
+    event.target.value = '';
+  }
+
+  function handleFilesDropped(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setIsDraggingFiles(false);
+    addResumeFiles(Array.from(event.dataTransfer.files || []));
   }
 
   return (
@@ -535,6 +562,12 @@ export default function DashboardScreen() {
               </div>
             ))}
           </div>
+
+          {!recordsLoading && !dashboardStats && (
+            <div role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-800">
+              Dashboard metrics were not returned by the backend. Restart or redeploy the resume backend with the latest changes.
+            </div>
+          )}
 
           <section className="rounded-[16px] border border-[#ece6f4] bg-white px-6 py-5 shadow-[0_4px_18px_rgba(111,81,154,0.05)]">
             {/* ── Tab bar ──────────────────────────────────────────────────── */}
@@ -627,7 +660,19 @@ export default function DashboardScreen() {
               onChange={handleFilesSelected}
             />
 
-            <div className="rounded-[16px] border border-dashed border-[#e8e2f1] bg-white px-6 py-12 text-center">
+            <div
+              onDragEnter={(event) => { event.preventDefault(); setIsDraggingFiles(true); }}
+              onDragOver={(event) => { event.preventDefault(); setIsDraggingFiles(true); }}
+              onDragLeave={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                  setIsDraggingFiles(false);
+                }
+              }}
+              onDrop={handleFilesDropped}
+              className={`rounded-[16px] border border-dashed px-6 py-12 text-center transition-colors ${
+                isDraggingFiles ? 'border-[#8b4fd1] bg-[#faf6ff]' : 'border-[#e8e2f1] bg-white'
+              }`}
+            >
               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full text-[#8f869d]">
                 <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
                   <path d="M7 18a4 4 0 01-.4-7.98A5.5 5.5 0 0117 8.5c0 .17-.01.34-.03.5A3.5 3.5 0 0117.5 16H15" />
@@ -645,19 +690,31 @@ export default function DashboardScreen() {
                   browse files
                 </button>
               </div>
-              <div className="mt-2 text-[11px] uppercase tracking-[0.08em] text-[#c1b6cf]">PDF, max 2MB</div>
+              <div className="mt-2 text-[11px] uppercase tracking-[0.08em] text-[#c1b6cf]">PDF, DOC, DOCX · Up to 25 files per batch</div>
+              {uploadError && (
+                <div role="alert" className="mt-3 text-[12px] font-medium text-red-600">{uploadError}</div>
+              )}
               {files.length > 0 && (
                 <div className="mt-4 flex flex-wrap justify-center gap-2">
                   {files.map((file) => (
                     <span
                       key={`${file.name}-${file.size}`}
-                      className="inline-flex items-center rounded-full bg-[#f0e4ff] px-3.5 py-1.5 text-[13px] font-medium text-[#6f2dbd]"
+                      className="inline-flex items-center gap-2 rounded-full bg-[#f0e4ff] px-3.5 py-1.5 text-[13px] font-medium text-[#6f2dbd]"
                     >
                       {file.name}
+                      <button
+                        type="button"
+                        aria-label={`Remove ${file.name}`}
+                        onClick={() => setFiles((current) => current.filter((item) => item !== file))}
+                        className="font-bold text-[#8e5bc2] hover:text-[#4f1687]"
+                      >
+                        ×
+                      </button>
                     </span>
                   ))}
                 </div>
               )}
+              <div className="mt-2 text-[11px] text-[#9c90af]">{files.length} of 25 resumes selected</div>
             </div>
 
             <div className="mt-4 flex justify-center">
@@ -1213,6 +1270,31 @@ export default function DashboardScreen() {
               </div>
             </div>
 
+            <div className="mb-4 flex gap-2 border-b border-[#f0ebf6]">
+              {([
+                { key: 'open', label: 'Open Hiring', count: records.filter((record) => record.isOpen !== false).length },
+                { key: 'closed', label: 'Closed Hiring', count: records.filter((record) => record.isOpen === false).length },
+              ] as const).map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => setHiringTab(tab.key)}
+                  className={`flex items-center gap-2 border-b-2 px-4 py-2.5 text-[12px] font-semibold transition-colors ${
+                    hiringTab === tab.key
+                      ? 'border-[#6f2dbd] text-[#6f2dbd]'
+                      : 'border-transparent text-[#9c90af] hover:text-[#5c22a4]'
+                  }`}
+                >
+                  {tab.label}
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] ${
+                    hiringTab === tab.key ? 'bg-[#f0e6ff] text-[#6f2dbd]' : 'bg-[#f5f2f8] text-[#9c90af]'
+                  }`}>
+                    {tab.count}
+                  </span>
+                </button>
+              ))}
+            </div>
+
             {recordsLoading ? (
               <div className="rounded-[10px] border border-[#f0ebf6] bg-[#fcfbfe] px-4 py-10 text-center text-[12px] text-[#8f829f]">
                 Loading records from backend...
@@ -1233,7 +1315,7 @@ export default function DashboardScreen() {
                     </tr>
                   </thead>
                   <tbody>
-                    {records.map((record) => (
+                    {hiringRecords.map((record) => (
                     <tr
                       key={record.id}
                       onClick={() => handleOpenRecord(record)}
@@ -1329,9 +1411,11 @@ export default function DashboardScreen() {
                   </tbody>
                 </table>
 
-                {records.length === 0 && (
+                {hiringRecords.length === 0 && (
                   <div className="px-4 py-10 text-center text-[14px] text-[#8f829f]">
-                    No parse runs yet. Start with a role and a few resumes.
+                    {hiringTab === 'open'
+                      ? 'No open jobs. Create a job or move one from Closed Hiring.'
+                      : 'No closed jobs. Jobs you close will appear here.'}
                   </div>
                 )}
               </div>

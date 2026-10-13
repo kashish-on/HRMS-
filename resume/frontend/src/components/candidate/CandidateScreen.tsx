@@ -66,6 +66,14 @@ export default function CandidateScreen() {
   return (
     <div>
       <div className="sticky top-0 z-50 flex h-[52px] items-center gap-2 border-b border-stone-200 bg-white px-6">
+        <button
+          type="button"
+          onClick={() => navigate('results')}
+          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-stone-300 px-2.5 text-[12px] font-medium text-stone-700 transition-colors hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500"
+        >
+          <span aria-hidden="true">←</span>
+          Back
+        </button>
         <span className="cursor-pointer text-[13px] text-stone-400 transition-colors hover:text-stone-700" onClick={() => navigate('dashboard')}>
           Recruitment
         </span>

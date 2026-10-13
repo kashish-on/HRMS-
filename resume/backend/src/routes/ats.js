@@ -477,8 +477,12 @@ router.post("/parse-run", upload.array("files", 25), async (req, res) => {
     const candidates = (finalCandidates || []).map((row) =>
       mapCandidateToResultsRow({
         candidate: row,
-        scorecard: Array.isArray(row.resume_scorecards) ? row.resume_scorecards[0] || null : null,
-        parsedData: Array.isArray(row.resume_parsed_data) ? row.resume_parsed_data[0] || null : null,
+        scorecard: Array.isArray(row.resume_scorecards)
+          ? row.resume_scorecards[0] || null
+          : row.resume_scorecards || null,
+        parsedData: Array.isArray(row.resume_parsed_data)
+          ? row.resume_parsed_data[0] || null
+          : row.resume_parsed_data || null,
         job: primaryJob,
       })
     );

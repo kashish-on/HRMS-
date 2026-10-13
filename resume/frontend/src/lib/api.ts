@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import type {
   Candidate,
+  DashboardStats,
   InterviewForm,
   Note,
   OfferForm,
@@ -111,9 +112,12 @@ export interface ParseRunResponse {
   }>;
 }
 
-export async function fetchRecords(): Promise<ParseRecord[]> {
-  const payload = await request<{ records?: ParseRecord[] }>('/jobs');
-  return payload.records || [];
+export async function fetchRecords(): Promise<{ records: ParseRecord[]; stats: DashboardStats | null }> {
+  const payload = await request<{ records?: ParseRecord[]; stats?: DashboardStats }>('/jobs');
+  return {
+    records: payload.records || [],
+    stats: payload.stats || null,
+  };
 }
 
 export async function fetchCandidatesForJob(jobId: string): Promise<Candidate[]> {

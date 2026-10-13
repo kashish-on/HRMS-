@@ -91,7 +91,7 @@ router.get("/", async (req, res) => {
         jobIds.length
           ? supabase
               .from("resume_candidates")
-              .select("id, job_id, ats_score, is_knocked_out, created_at, updated_at")
+              .select("id, job_id, ats_score, is_knocked_out, stage, created_at, updated_at")
               .in("job_id", jobIds)
           : Promise.resolve({ data: [], error: null }),
       ]);
@@ -142,16 +142,66 @@ router.get("/", async (req, res) => {
       .sort((a, b) => (b.latestActivityAt || 0) - (a.latestActivityAt || 0))
       .map(({ latestActivityAt, ...record }) => record);
 
+    const scoredCandidates = (candidates || []).filter(
+      (candidate) =>
+        candidate.ats_score !== null &&
+        candidate.ats_score !== undefined &&
+        candidate.ats_score !== "" &&
+        Number.isFinite(Number(candidate.ats_score))
+    );
+    const totalScore = scoredCandidates.reduce(
+      (sum, candidate) => sum + Number(candidate.ats_score),
+      0
+    );
+    const dashboardStats = {
+      totalResumes: (uploads || []).length,
+      highMatch: scoredCandidates.filter(
+        (candidate) => !candidate.is_knocked_out && Number(candidate.ats_score) >= 75
+      ).length,
+      avgScore: scoredCandidates.length ? Math.round(totalScore / scoredCandidates.length) : 0,
+      shortlistedCount: (candidates || []).filter((candidate) => candidate.stage === "Shortlisted").length,
+      interviewCount: (candidates || []).filter(
+        (candidate) => candidate.stage === "Interview Scheduled" || candidate.stage === "Interviewed"
+      ).length,
+      rejectedCount: (candidates || []).filter((candidate) => candidate.stage === "Rejected").length,
+    };
+
     return res.json({
       status: "ok",
       jobs: jobs || [],
       records,
+      stats: dashboardStats,
     });
   } catch (error) {
     console.error("Unexpected fetch jobs error:", error);
     return res.status(500).json({
       status: "error",
       message: error?.message || "Failed to fetch jobs.",
+    });
+  }
+});
+
+router.get("/options", async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from("resume_jobs")
+      .select("id, title, job_profile")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Fetch job options error:", error);
+      return res.status(500).json({
+        status: "error",
+        message: error.message,
+      });
+    }
+
+    return res.json({ status: "ok", jobs: data || [] });
+  } catch (error) {
+    console.error("Unexpected fetch job options error:", error);
+    return res.status(500).json({
+      status: "error",
+      message: error?.message || "Failed to fetch job options.",
     });
   }
 });
@@ -340,8 +390,12 @@ router.get("/:id/candidates", async (req, res) => {
     const candidates = (rows || []).map((row) =>
       mapCandidateToResultsRow({
         candidate: row,
-        scorecard: Array.isArray(row.resume_scorecards) ? row.resume_scorecards[0] || null : null,
-        parsedData: Array.isArray(row.resume_parsed_data) ? row.resume_parsed_data[0] || null : null,
+        scorecard: Array.isArray(row.resume_scorecards)
+          ? row.resume_scorecards[0] || null
+          : row.resume_scorecards || null,
+        parsedData: Array.isArray(row.resume_parsed_data)
+          ? row.resume_parsed_data[0] || null
+          : row.resume_parsed_data || null,
         job: primaryJob,
       })
     );

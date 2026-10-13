@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { ReactNode } from 'react';
 import type {
   Candidate,
+  DashboardStats,
   ParseRecord,
   ScoreWeights,
   ATSScreen,
@@ -39,6 +40,7 @@ interface ATSContextValue {
   screen: ATSScreen;
   navigate: (screen: ATSScreen) => void;
   records: ParseRecord[];
+  dashboardStats: DashboardStats | null;
   recordsLoading: boolean;
   refreshRecords: () => Promise<ParseRecord[]>;
   updateRecordLocally: (id: string, patch: Partial<ParseRecord>) => void;
@@ -142,6 +144,7 @@ function formatFailedUploadsMessage(
 export function ATSProvider({ children, currentUserName }: { children: ReactNode; currentUserName?: string }) {
   const [screen, setScreen] = useState<ATSScreen>('dashboard');
   const [records, setRecords] = useState<ParseRecord[]>([]);
+  const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(null);
   const [recordsLoading, setRecordsLoading] = useState(true);
   const [currentRecord, setCurrentRecordState] = useState<ParseRecord | null>(null);
   const [candidateMap, setCandidateMap] = useState<Record<string, Candidate[]>>({});
@@ -209,8 +212,9 @@ export function ATSProvider({ children, currentUserName }: { children: ReactNode
     setRecordsLoading(true);
 
     try {
-      const nextRecords = await fetchRecords();
+      const { records: nextRecords, stats } = await fetchRecords();
       setRecords(nextRecords);
+      setDashboardStats(stats);
       return nextRecords;
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
@@ -237,8 +241,10 @@ export function ATSProvider({ children, currentUserName }: { children: ReactNode
   }, [replaceCandidateList]);
 
   useEffect(() => {
-    void loadRecords();
-  }, [loadRecords]);
+    if (screen === 'dashboard') {
+      void loadRecords();
+    }
+  }, [loadRecords, screen]);
 
   useEffect(() => {
     if (!currentRecord) {
@@ -566,6 +572,7 @@ export function ATSProvider({ children, currentUserName }: { children: ReactNode
         screen,
         navigate,
         records,
+        dashboardStats,
         recordsLoading,
         refreshRecords: loadRecords,
         updateRecordLocally,

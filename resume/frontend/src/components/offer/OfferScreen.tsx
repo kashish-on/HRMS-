@@ -52,6 +52,14 @@ export default function OfferScreen() {
     <div>
       {/* Topbar */}
       <div className="h-[52px] bg-white border-b border-stone-200 flex items-center px-6 gap-2 sticky top-0 z-50">
+        <button
+          type="button"
+          onClick={() => navigate('candidate')}
+          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-stone-300 px-2.5 text-[12px] font-medium text-stone-700 transition-colors hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500"
+        >
+          <span aria-hidden="true">←</span>
+          Back
+        </button>
         <span className="text-[13px] text-stone-400 hover:text-stone-700 cursor-pointer transition-colors" onClick={() => navigate('dashboard')}>Recruitment</span>
         <span className="text-stone-300">/</span>
         <span className="text-[13px] text-stone-400 hover:text-stone-700 cursor-pointer transition-colors" onClick={() => navigate('results')}>{currentRecord.role}</span>

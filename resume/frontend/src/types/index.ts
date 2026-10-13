@@ -46,6 +46,15 @@ export interface ParseRecord {
   isOpen?: boolean; // true = hiring active, false = closed
 }
 
+export interface DashboardStats {
+  totalResumes: number;
+  highMatch: number;
+  avgScore: number;
+  shortlistedCount: number;
+  interviewCount: number;
+  rejectedCount: number;
+}
+
 export interface ScoreWeights {
   skill: number;
   experience: number;

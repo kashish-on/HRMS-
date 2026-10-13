@@ -99,6 +99,7 @@ export default function ResultsScreen() {
 
   const [scoreFilter, setScoreFilter] = useState('');
   const [stageFilter, setStageFilter] = useState('');
+  const [activeStatKey, setActiveStatKey] = useState('all');
   const [sortBy, setSortBy] = useState('score');
   const [currentPage, setCurrentPage] = useState(1);
   const [togglingStatus, setTogglingStatus] = useState(false);
@@ -138,7 +139,11 @@ export default function ResultsScreen() {
     }
 
     if (stageFilter) {
-      list = list.filter((candidate) => candidate.stage === stageFilter);
+      list = list.filter((candidate) =>
+        stageFilter === 'interview'
+          ? candidate.stage === 'Interview Scheduled' || candidate.stage === 'Interviewed'
+          : candidate.stage === stageFilter
+      );
     }
 
     if (sortBy === 'score') {
@@ -178,13 +183,45 @@ export default function ResultsScreen() {
   const rejectedCount = scoredCandidates.filter((candidate) => candidate.stage === 'Rejected').length;
 
   const stats = [
-    { value: candidates.length, ...statStyles[0] },
-    { value: highMatch, ...statStyles[1] },
-    { value: avgScore, ...statStyles[2] },
-    { value: shortlistedCount, ...statStyles[3] },
-    { value: interviewCount, ...statStyles[4] },
-    { value: rejectedCount, ...statStyles[5] },
+    { key: 'all', value: candidates.length, ...statStyles[0] },
+    { key: 'highMatch', value: highMatch, ...statStyles[1] },
+    { key: 'average', value: avgScore, ...statStyles[2] },
+    { key: 'shortlisted', value: shortlistedCount, ...statStyles[3] },
+    { key: 'interview', value: interviewCount, ...statStyles[4] },
+    { key: 'rejected', value: rejectedCount, ...statStyles[5] },
   ];
+
+  const handleStatClick = (key: string) => {
+    if (key === 'highMatch') {
+      const alreadySelected = scoreFilter === 'green' && !stageFilter;
+      setScoreFilter(alreadySelected ? '' : 'green');
+      setStageFilter('');
+      setActiveStatKey(alreadySelected ? 'all' : key);
+      return;
+    }
+
+    const stageByKey: Record<string, string> = {
+      shortlisted: 'Shortlisted',
+      interview: 'interview',
+      rejected: 'Rejected',
+    };
+    const targetStage = stageByKey[key];
+
+    if (targetStage) {
+      const alreadySelected = stageFilter === targetStage && !scoreFilter;
+      setStageFilter(alreadySelected ? '' : targetStage);
+      setScoreFilter('');
+      setActiveStatKey(alreadySelected ? 'all' : key);
+      return;
+    }
+
+    // Total resumes and average score represent the unfiltered job candidate set.
+    setScoreFilter('');
+    setStageFilter('');
+    setActiveStatKey(key);
+  };
+
+  const isStatActive = (key: string) => activeStatKey === key;
 
   function openCandidate(candidate: Candidate) {
     setCurrentCandidate(candidate);
@@ -200,8 +237,16 @@ export default function ResultsScreen() {
   return (
     <div className="px-4 py-4">
       <div className="rounded-[20px] border border-[#ede7f4] bg-white shadow-[0_10px_28px_rgba(91,59,132,0.05)]">
-        <div className="border-b border-[#f0ebf6] px-8 py-5">
-          <div className="text-[34px] font-semibold tracking-[-0.03em] text-[#1f1830]">Parsed Resume</div>
+        <div className="flex flex-wrap items-center gap-4 border-b border-[#f0ebf6] px-8 py-5">
+          <button
+            type="button"
+            onClick={() => navigate('dashboard')}
+            className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#e5deef] bg-white px-3 text-[12px] font-semibold text-[#6f2dbd] transition-colors hover:bg-[#f8f3ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8b4fd1]"
+          >
+            <span aria-hidden="true">←</span>
+            Back
+          </button>
+          <div className="text-[34px] font-semibold tracking-[-0.03em] text-[#1f1830]">Parsed Resumes</div>
         </div>
 
         <div className="space-y-5 p-6">
@@ -209,7 +254,10 @@ export default function ResultsScreen() {
             <div className="flex flex-wrap gap-3">
               <select
                 value={scoreFilter}
-                onChange={(event) => setScoreFilter(event.target.value)}
+                onChange={(event) => {
+                  setScoreFilter(event.target.value);
+                  setActiveStatKey('');
+                }}
                 className="h-11 min-w-[130px] rounded-md border border-[#e5deef] bg-[#fbfafe] px-3.5 text-[13px] text-[#6f627f] outline-none focus:border-[#b48de2]"
               >
                 <option value="">All Scores</option>
@@ -219,13 +267,17 @@ export default function ResultsScreen() {
               </select>
               <select
                 value={stageFilter}
-                onChange={(event) => setStageFilter(event.target.value)}
+                onChange={(event) => {
+                  setStageFilter(event.target.value);
+                  setActiveStatKey('');
+                }}
                 className="h-11 min-w-[120px] rounded-md border border-[#e5deef] bg-[#fbfafe] px-3.5 text-[13px] text-[#6f627f] outline-none focus:border-[#b48de2]"
               >
                 <option value="">All Stages</option>
                 <option value="Applied">Applied</option>
                 <option value="Shortlisted">Shortlisted</option>
                 <option value="Interview Scheduled">Interview Scheduled</option>
+                <option value="interview">Interview Stage</option>
                 <option value="Interviewed">Interviewed</option>
                 <option value="Offer Extended">Offer Extended</option>
                 <option value="Rejected">Rejected</option>
@@ -245,9 +297,14 @@ export default function ResultsScreen() {
 
           <div className="grid grid-cols-6 gap-4">
             {stats.map((stat) => (
-              <div
+              <button
                 key={stat.keyLabel}
-                className="rounded-[14px] border border-[#ece6f4] bg-white px-4 py-4 shadow-[0_3px_12px_rgba(111,81,154,0.06)]"
+                type="button"
+                onClick={() => handleStatClick(stat.key)}
+                aria-pressed={isStatActive(stat.key)}
+                className={`rounded-[14px] border bg-white px-4 py-4 text-left shadow-[0_3px_12px_rgba(111,81,154,0.06)] transition hover:-translate-y-0.5 hover:border-[#c9a9ed] hover:shadow-[0_6px_18px_rgba(111,45,189,0.12)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8b4fd1] ${
+                  isStatActive(stat.key) ? 'border-[#b48de2] ring-1 ring-[#b48de2]' : 'border-[#ece6f4]'
+                }`}
               >
                 <div className={`flex h-8 w-8 items-center justify-center rounded-md ${stat.iconBg} ${stat.iconColor}`}>
                   {stat.icon}
@@ -256,7 +313,7 @@ export default function ResultsScreen() {
                   {stat.keyLabel}
                 </div>
                 <div className="mt-2 text-[42px] font-semibold leading-none text-[#6f2dbd]">{stat.value}</div>
-              </div>
+              </button>
             ))}
           </div>
 
